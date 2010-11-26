@@ -25,7 +25,7 @@ __global__ void dedisperse_loop(float *outbuff, float *buff, int nsamp, int ncha
         shared[threadIdx.x] = 0;
      
         for(c = 0; c < nchans; c++) {
-            int shift = c * (nsamp + maxshift) + floor(dm_shifts[c] * shift_temp);
+            int shift = c * (nsamp + maxshift) + dm_shifts[c] * shift_temp;
             shared[threadIdx.x] += buff[s + shift];
         }
 
@@ -151,13 +151,13 @@ int main(int argc, char *argv[])
     printf("Copied from GPU in: %lf\n", timestamp);
 
     // Check values
-    int val = 0;
-    for(i = 0; i < nchans; i++) val += i;
+//    int val = 0;
+//    for(i = 0; i < nchans; i++) val += i;
 
-    for(i = 0; i < tdms; i++)
-        for(j = 0; j < nsamp; j++)
-            if (output[i * nsamp + j] != val)
-                printf("Error: dm: %d nsamp: %d value:%f \n", i, j, output[i*nsamp+j]);
+//    for(i = 0; i < tdms; i++)
+//        for(j = 0; j < nsamp; j++)
+//            if (output[i * nsamp + j] != val)
+//                printf("Error: dm: %d nsamp: %d value:%f \n", i, j, output[i*nsamp+j]);
 
     printf("Total time: %d\n", (int) (time(NULL) - start));
     printf("Performance: %lf Gflops\n", (nchans * tdms) * (nsamp * 1.0 / kernelTime / 1.0e6));

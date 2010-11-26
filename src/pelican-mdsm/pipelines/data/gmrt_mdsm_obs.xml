@@ -1,0 +1,25 @@
+<observation>
+    <frequencies top="1420" offset="-0.0977" polarisations="2" />
+    <dm lowDM="0" numDMs="100" dmStep="0.1" useBruteForce="0" />
+    <samples number="132768" /> 
+	<channels number="512" dedispSubbands="16" subbands="512" />
+	<timing tsamp="0.0000128" />
+    <gpus ids="0,1" />
+    <output filePrefix="gmrt" baseDirectory="." 
+            secondsPerFile="180" usePCTime="1" 
+            singleFileMode="1" />
+    <processes channelise="1" />
+
+    <passes>
+        <pass>
+            <lowDm>0</lowDm>
+            <highDm>25.2</highDm>
+            <deltaDm>0.02</deltaDm>
+            <downsample>1</downsample>
+            <subDm>0.48</subDm>
+            <numDms>1200</numDms>
+            <dmsPerCall>24</dmsPerCall>
+            <ncalls>50</ncalls>
+        </pass>
+    </passes>
+</observation>

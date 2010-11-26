@@ -89,9 +89,9 @@ void process_subband(float *buffer, FILE* output, SURVEY *survey, int read_nsamp
                 for(l = 0; l < nsamp; l++) {
                     temp_val = buffer[size * thread + shift + k * nsamp + l] - mean;
                     if (temp_val >= stddev * 5 )
-                        fprintf(output, "%lf, %f, %f\n", 
-                                timestamp + l * blockRate * survey -> pass_parameters[i].binsize,
-                                startdm + k * dmstep, temp_val + mean); 
+//                        fprintf(output, "%lf, %f, %f\n", 
+//                                timestamp + l * blockRate * survey -> pass_parameters[i].binsize,
+//                                startdm + k * dmstep, temp_val + mean); 
 ;                }
             
             shift += nsamp * ndms;

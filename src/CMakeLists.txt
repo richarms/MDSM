@@ -33,7 +33,7 @@ endif(NOT GPU_VERSION_ARCHITECTURE)
 
 # === Find dependencies.
 if(NOT CUDA_SDK_ROOT_DIR)
-    set(CUDA_SDK_ROOT_DIR /usr/local/cudaSDK/C)
+    set(CUDA_SDK_ROOT_DIR ~/NVIDIA_GPU_Computing_SDK/C)
 endif(NOT CUDA_SDK_ROOT_DIR)
 
 find_package(CUDA 2.3 REQUIRED)
@@ -54,18 +54,20 @@ find_package(Qt4 COMPONENTS QtCore QtNetwork QtXml REQUIRED)
 find_package(PelicanLofar REQUIRED)
 find_package(OpenMP REQUIRED)
 find_package(FFTW3 REQUIRED)
-# pthread ... ?!
 
 
 include_directories("${CUDA_SDK_ROOT_DIR}/common/inc")
 include_directories(${CUDA_INCLUDE_DIRS})
 include_directories(${PELICAN_LOFAR_INCLUDE_DIR})
 include_directories(${PELICAN_INCLUDE_DIR})
+include_directories(${QT_QTXML_INCLUDE_DIR})
+include_directories(${QT_QTNETWORK_INCLUDE_DIR})
+
 
 # === Recurse into sub-directories defined in modules.cmake.
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/mdsm")
+include_directories("${CMAKE_CURRENT_SOURCE_DIR}/standalone")
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/pelican-mdsm/modules")
-include_directories(${QT_QTXML_INCLUDE_DIR})
 include(modules.cmake)
 
 

@@ -45,18 +45,25 @@ void MdsmPipeline::run(QHash<QString, DataBlob*>& remoteData)
         }
     }
 
-    // Run modules
+    // Output raw data
+//    stokesGenerator -> run(timeSeries, stokes);
+//    dataOutput(stokes, "TimeSeriesDataSetC32");
+
+//    // Run modules
     ppfChanneliser->run(timeSeries, spectra);
-    stokesGenerator->run(spectra, stokes);
-    // Clips RFI and modifies blob in place                                                                      
-    rfiClipper->run(stokes);
+    stokesGenerator->run(spectra, stokes);                                                                  
+//    rfiClipper->run(stokes);
 
-    mdsm->run(stokes, dedispersedData);
+    // Perform dedispersion
+//    mdsm->run(stokes, dedispersedData);
 
-    // Output channelised data
-    //    dataOutput(stokes, "DedispersedDataWriter");
+//    // Output channelised data
+//    // dataOutput(stokes, "DedispersedDataWriter");
 
-    dataOutput(dedispersedData, "DedispersedTimeSeriesF32");
+//    // Output dedispersed data
+//    // dataOutput(dedispersedData, "DedispersedTimeSeriesF32");
 
     _iteration++;
+    if (_iteration % 1000 == 0)
+    std::cout << "Iteration: " << _iteration << std::endl;
 }

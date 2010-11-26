@@ -10,7 +10,7 @@ outputFile = open('gpu_benchmarks.txt', 'w')
 for c in nchans:
     for d in tdms:
         for s in nsamp:
-            p = sp.Popen(['./dedisp_benchmark', '-nsamp', str(s), '-nchans', str(c), '-tdms', str(d)], stdout = sp.PIPE)
+            p = sp.Popen(['./brute_dedisp_imp', '-nsamp', str(s), '-nchans', str(c), '-tdms', str(d), '-blocksize 128'], stdout = sp.PIPE)
             out = p.communicate()
             outputFile.write(out[0] + '\n')
             outputFile.flush()

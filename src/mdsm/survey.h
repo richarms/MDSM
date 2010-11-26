@@ -13,7 +13,7 @@ typedef struct {
 typedef struct {
 
     // Data parameters
-    unsigned int nsamp, nchans, tdms, maxshift, nbits;
+    unsigned int nsamp, nchans, tdms, maxshift, nbits, nsubs, npols;
     float tsamp, foff, fch1;
     
     // Switch between brute-froce & subband dedisp
@@ -24,7 +24,7 @@ typedef struct {
 
     // subband dedispersion paramters
     SUBBAND_PASSES *pass_parameters;
-    unsigned num_passes, nsubs;
+    unsigned num_passes, dedispSubbands;
     
     // Timing parameters
     double timestamp;
@@ -42,6 +42,9 @@ typedef struct {
     unsigned num_threads;
     unsigned *gpu_ids;
     unsigned num_gpus;
+    
+    // Actions performed on the GPU
+    bool performChannelisation;
 
 } SURVEY;
 

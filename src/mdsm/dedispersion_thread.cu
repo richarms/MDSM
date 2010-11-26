@@ -93,7 +93,8 @@ void subband_dedispersion(float *d_input, float *d_output, THREAD_PARAMS* params
 				inplace_binning_kernel<<< gridDim_bin, blockDim_bin >>>(d_input, nsamp + maxshift, nchans, kernelBin);
 				inplace_memory_reorganisation<<< gridDim_bin, blockDim_bin >>>(d_input, nsamp + maxshift, nchans, kernelBin);
 				cutilSafeCall( cudaMemset(d_input + (nsamp + maxshift) * nchans / binsize, 0,
-										 ((nsamp + maxshift) * nchans - (nsamp + maxshift) * nchans / binsize) * sizeof(float)));
+										 ((nsamp + maxshift) * nchans - (nsamp + maxshift) * nchans / binsize) 
+										  * sizeof(float)));
 			} else {
 				inshift = outshift;
 				outshift += ( (nsamp + maxshift) * nchans) * 2 / binsize;
@@ -116,7 +117,7 @@ void subband_dedispersion(float *d_input, float *d_output, THREAD_PARAMS* params
 
 	// Handle dedispersion maxshift
 	inshift = 0, outshift = 0;
-	int ncalls, tempval = (int) (params -> dmshifts[(survey -> nsubs - 1) * nchans / survey -> nsubs]
+	int ncalls, tempval = (int) (params -> dmshifts[(survey -> dedispSubbands - 1) * nchans / survey -> dedispSubbands]
 						  * survey -> pass_parameters[survey -> num_passes - 1].highdm /
 						  survey -> tsamp );
 	float startdm;
@@ -130,12 +131,12 @@ void subband_dedispersion(float *d_input, float *d_output, THREAD_PARAMS* params
 
 		// Perform subband dedispersion
 		opt_dedisperse_subband <<< dim3((nsamp + tempval) / binsize / blocksize_dedisp, ncalls), 
-                                   blocksize_dedisp, blocksize_dedisp * survey -> nsubs >>>
-			    (d_output, d_input, (nsamp + tempval) / binsize, nchans, survey -> nsubs,
+                                   blocksize_dedisp, blocksize_dedisp * survey -> dedispSubbands >>>
+			    (d_output, d_input, (nsamp + tempval) / binsize, nchans, survey -> dedispSubbands,
 			     startdm, survey -> pass_parameters[i].sub_dmstep,
 			     tsamp * binsize, maxshift - tempval, inshift, outshift);
 
-		outshift += (nsamp + tempval) * survey -> nsubs * ncalls / binsize ;
+		outshift += (nsamp + tempval) * survey -> dedispSubbands * ncalls / binsize ;
 		inshift += (nsamp + maxshift) * nchans / binsize;
 	}
 
@@ -167,12 +168,12 @@ void subband_dedispersion(float *d_input, float *d_output, THREAD_PARAMS* params
 
 			opt_dedisperse_loop<<< dim3(nsamp / blocksize_dedisp, survey -> pass_parameters[i].calldms), 
                                    blocksize_dedisp, blocksize_dedisp >>>
-				(d_output, d_input, nsamp / binsize, survey -> nsubs,
-				 tsamp * binsize, nchans /  survey -> nsubs,
+				(d_output, d_input, nsamp / binsize, survey -> dedispSubbands,
+				 tsamp * binsize, nchans /  survey -> dedispSubbands,
 				 dm, survey -> pass_parameters[i].dmstep, tempval / binsize,
 	  			 inshift, outshift);
 
-			inshift += (nsamp + tempval) * survey -> nsubs / binsize;
+			inshift += (nsamp + tempval) * survey -> dedispSubbands / binsize;
 			outshift += nsamp * survey -> pass_parameters[i].calldms / binsize;
 		}
 	}
@@ -185,7 +186,8 @@ void subband_dedispersion(float *d_input, float *d_output, THREAD_PARAMS* params
 }
 
 // Perform brute-froce dedisperion
-void brute_force_dedispersion(float *d_input, float *d_output, THREAD_PARAMS* params, cudaEvent_t event_start, cudaEvent_t event_stop, int maxshift)
+void brute_force_dedispersion(float *d_input, float *d_output, THREAD_PARAMS* params, 
+                              cudaEvent_t event_start, cudaEvent_t event_stop, int maxshift)
 {
 	// Define function variables;
     SURVEY *survey = params -> survey;
@@ -201,18 +203,51 @@ void brute_force_dedispersion(float *d_input, float *d_output, THREAD_PARAMS* pa
 			(d_output, d_input, survey -> nsamp, survey -> nchans,
 			 survey -> tsamp, 1, startdm, survey -> dmstep, maxshift, 0, 0);
 
-    // Original kernel
-//    dedisperse_loop<<< dim3(128, survey -> tdms / survey -> num_threads), 128 >>>
-//			(d_output, d_input, survey -> nsamp, survey -> nchans,
-//			 survey -> tsamp, 1, startdm, survey -> dmstep, 0, 0);
-
-
     cudaEventRecord(event_stop, 0);
 	cudaEventSynchronize(event_stop);
 	cudaEventElapsedTime(&timestamp, event_start, event_stop);
 	printf("%d: Performed Brute-Force Dedispersion %d: %lf\n", (int) (time(NULL) - params -> start),
 															   params -> thread_num, timestamp);
 
+}
+
+// Perform channelisation and intensity calculation on the GPU
+void channelise(cufftComplex *d_input, float *d_output, THREAD_PARAMS* params, 
+                              cudaEvent_t event_start, cudaEvent_t event_stop, int maxshift)
+{
+    // NOTE: This method will take care of discrepancies in nsamp and nchans 
+    //       between these kernels with the dedispersion ones
+    
+    // Define function variables;
+    SURVEY *survey = params -> survey;
+    unsigned chansPerSubband = survey -> nchans / survey -> nsubs;
+    float timestamp;
+
+    // ------------------------------------- Perform Channelisation on GPU --------------------------------------
+    
+    // Create Cufft plan
+    cufftHandle plan;
+    cufftPlan1d(&plan, chansPerSubband, CUFFT_C2C, survey -> nsamp * survey -> nsubs * survey -> npols);
+    cudaEventRecord(event_start, 0);
+    cufftExecC2C(plan, d_input, d_input, CUFFT_FORWARD); 
+    cudaEventRecord(event_stop, 0);
+	cudaEventSynchronize(event_stop);
+	cudaEventElapsedTime(&timestamp, event_start, event_stop);
+	printf("%d: Performed Channelisation %d: %lf\n", (int) (time(NULL) - params -> start),
+														    params -> thread_num, timestamp);
+															   
+    // ------------------------------------- Calculate intensities on GPU --------------------------------------
+   
+    // Calculate intensity and perform transpose in memory
+    cudaEventRecord(event_start, 0);
+    calculate_intensities<<<dim3(survey -> nsamp / 128, 1), 128>>>(d_input, d_output, survey -> nsamp, 
+                                                  survey -> nsubs, chansPerSubband, survey -> npols);
+    cudaEventRecord(event_stop, 0);
+    cudaEventSynchronize(event_stop);
+    cudaEventElapsedTime(&timestamp, event_start, event_stop);
+    printf("Processed Intensities in: %lfms\n", timestamp);
+    
+    // Returns nsamp/chansPerSubband samples with nchans (full) channels
 }
 
 // Dedispersion algorithm
@@ -237,7 +272,6 @@ void* dedisperse(void* thread_params)
 
     // Temporary store for maxshift
     float *tempshift = (float *) malloc(maxshift * nchans * sizeof(float));
-    float *tempshift2 = (float *) malloc(maxshift * nchans * sizeof(float));
 
     // Initialise events / performance timers
     cudaEvent_t event_start, event_stop;
@@ -255,16 +289,19 @@ void* dedisperse(void* thread_params)
             cudaEventRecord(event_start, 0);
             if (loop_counter == 1) {
                 // First iteration, no available extra samples, so load everything to GPU memory
-                cutilSafeCall( cudaMemcpy(d_input, params -> input, (nsamp + maxshift) * nchans * sizeof(float), cudaMemcpyHostToDevice) );
+                cutilSafeCall( cudaMemcpy(d_input, params -> input, 
+                                          (nsamp + maxshift) * nchans * sizeof(float), cudaMemcpyHostToDevice) );
 
                 // Keep a copy of maxshift in memory
                 for(i = 0; i < nchans; i++)
-                    memcpy(tempshift + (maxshift * i), params -> input + i * (nsamp + maxshift) + nsamp, maxshift * sizeof(float)); // NOTE: Optimise
+                    memcpy(tempshift + (maxshift * i), params -> input + i * (nsamp + maxshift) + nsamp, 
+                           maxshift * sizeof(float)); // NOTE: Optimise
             }
             else {
                 // Copy previous maxshift to input buffer
                 for(i = 0; i < nchans; i++)
-                    memcpy(params -> input + i * (nsamp + maxshift),  tempshift + maxshift * i, maxshift * sizeof(float)); // NOTE: Optimise
+                    memcpy(params -> input + i * (nsamp + maxshift),  tempshift + maxshift * i, 
+                           maxshift * sizeof(float)); // NOTE: Optimise
 
                // cutilSafeCall( cudaMemcpy(d_input, tempshift, maxshift * nchans * sizeof(float), cudaMemcpyHostToDevice) );
                 cutilSafeCall( cudaMemcpy(d_input, params -> input,
@@ -272,21 +309,9 @@ void* dedisperse(void* thread_params)
 
                 // Keep a copy of maxshift in memory
                 for(i = 0; i < nchans; i++)
-                    memcpy(tempshift + (maxshift * i), params -> input + i * (nsamp + maxshift) + nsamp, maxshift * sizeof(float)); // NOTE: Optimise
+                    memcpy(tempshift + (maxshift * i), params -> input + i * (nsamp + maxshift) + nsamp, 
+                           maxshift * sizeof(float)); // NOTE: Optimise
             }
-
-//            if (loop_counter == 1) {
-//                // First iteration, no available extra samples, so load everything to GPU memory
-//                cutilSafeCall( cudaMemcpy(d_input, params -> input, (nsamp + maxshift) * nchans * sizeof(float), cudaMemcpyHostToDevice) );
-//                memcpy(tempshift, params -> input + nsamp * nchans, maxshift * nchans * sizeof(float)); // NOTE: Optimise
-//            }
-//            else {
-//                // Shift buffers and load input buffer
-//                cutilSafeCall( cudaMemcpy(d_input, tempshift, maxshift * nchans * sizeof(float), cudaMemcpyHostToDevice) );
-//                cutilSafeCall( cudaMemcpy(d_input + (maxshift * nchans), params -> input,
-//                                          nsamp * nchans * sizeof(float), cudaMemcpyHostToDevice) );
-//                memcpy(tempshift, params -> input + (nsamp - maxshift) * nchans, maxshift * nchans * sizeof(float)); // NOTE: Optimise
-//            }
 
             cudaEventRecord(event_stop, 0);
             cudaEventSynchronize(event_stop);

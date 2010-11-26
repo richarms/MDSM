@@ -226,6 +226,34 @@ __global__ void inplace_memory_reorganisation(float *input, int nsamp, int nchan
     }
 }
 
-// -----------------------------------------------------------------------------------
+// ---------------------- Intensities Calculation Loop  ------------------------------
+__global__ void calculate_intensities(cufftComplex *inbuff, float *outbuff, int nsamp, 
+                                      int nsubs, int nchans, int npols)
+{
+    unsigned s, c, p;
+    
+    for(s = threadIdx.x + blockIdx.x * blockDim.x;
+        s < nsamp;
+        s += blockDim.x * gridDim.x)
+    {
+        // Loop over all channels
+        for(c = 0; c < nsubs; c++) {
+              
+            float intensity = 0;
+            cufftComplex tempval;
+                
+            // Loop over polarisations
+            for(p = 0; p < npols; p++) {
+
+                // Square real and imaginary parts
+                tempval = inbuff[p * nsubs * nsamp + c * nsamp + s] ;
+                intensity += tempval.x * tempval.x + tempval.y * tempval.y;
+            }
+
+            // Store in output buffer
+            outbuff[(c * nchans + s % nchans) * (nsamp / nchans) + s / nchans ] = intensity;
+        }
+    }
+}
 
 #endif

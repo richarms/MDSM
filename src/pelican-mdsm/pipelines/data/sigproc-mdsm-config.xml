@@ -13,21 +13,21 @@
         <adapters>
             <SigprocAdapter>
                 <sampleSize bits="8"/>
-                <subbands number="1024" />
-                <samplesPerRead number="1024" />
+                <subbands number="512" />
+                <samplesPerRead number="512" />
             </SigprocAdapter>
         </adapters>
 
         <clients>
             <FileDataClient>
-                <data type="SpectrumDataSetStokes" adapter="SigprocAdapter" file="/home/lessju/Code/MDSM/Tests/LOFAR/lofar_156_75_2.dat"/>
+                <data type="SpectrumDataSetStokes" adapter="SigprocAdapter" file="/home/harsha/Code/MDSM/gmrt_test.dat"/>
             </FileDataClient>
         </clients>
 
         <modules>
             <MdsmModule>
-                <observationfile filepath="/home/lessju/Code/MDSM/Tests/LOFAR/lofar_156_32_2.xml" />
-                <createOutputBlob value="1" />
+                <observationfile filepath="/home/harsha/Code/MDSM/src/pelican-mdsm/pipelines/data/gmrt_mdsm_obs.xml" />
+                <createOutputBlob value="0" />
                 <invertChannels value="0" />
             </MdsmModule>
         </modules>

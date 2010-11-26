@@ -83,7 +83,9 @@ SURVEY* processSurveyParameters(QString filepath)
     // Assign default values
     survey -> useBruteForce = 0;
     survey -> nsamp = 0;
+    survey -> nsubs = 1;
     survey -> nbits = 0;
+    survey -> nbits = 1;
     survey -> gpu_ids = NULL;
     survey -> num_gpus = 0;
     strcpy(survey -> fileprefix, "output");
@@ -91,6 +93,7 @@ SURVEY* processSurveyParameters(QString filepath)
     survey -> secs_per_file = 600;
     survey -> use_pc_time = 1;
     survey -> single_file_mode = 0;
+    survey -> performChannelisation = false;
 
     // Start parsing observation file and generate survey parameters
     n = root.firstChild();
@@ -102,6 +105,7 @@ SURVEY* processSurveyParameters(QString filepath)
             if (QString::compare(e.tagName(), QString("frequencies"), Qt::CaseInsensitive) == 0) {
                 survey -> fch1 = e.attribute("top").toFloat();
                 survey -> foff = e.attribute("offset").toFloat();
+                survey -> npols = e.attribute("polarisations").toFloat();
             }
             else if (QString::compare(e.tagName(), QString("dm"), Qt::CaseInsensitive) == 0) {
                 survey -> lowdm = e.attribute("lowDM").toFloat();
@@ -112,6 +116,7 @@ SURVEY* processSurveyParameters(QString filepath)
             else if (QString::compare(e.tagName(), QString("channels"), Qt::CaseInsensitive) == 0) {
                 survey -> nchans = e.attribute("number").toUInt();
                 survey -> nsubs = e.attribute("subbands").toUInt();
+                survey -> dedispSubbands = e.attribute("dedispSubbands").toUInt();
             }
             else if (QString::compare(e.tagName(), QString("timing"), Qt::CaseInsensitive) == 0)
                 survey -> tsamp = e.attribute("tsamp").toFloat();
@@ -125,6 +130,12 @@ SURVEY* processSurveyParameters(QString filepath)
                 survey -> secs_per_file = e.attribute("secondsPerFile", "600").toUInt();
                 survey -> use_pc_time = e.attribute("usePCTime", "1").toUInt();
                 survey -> single_file_mode = e.attribute("singleFileMode", "0").toUInt();
+            }
+            
+            // Define processes to be computed on the GPU
+            else if(QString::compare(e.tagName(), QString("processes"), Qt::CaseInsensitive) == 0) {
+                if (e.attribute("channelise", "0").toUInt())
+                    survey -> performChannelisation = true;
             }
         
             // Check if user has specified GPUs to use
@@ -206,14 +217,16 @@ int calculate_nsamp_subband(int maxshift, size_t *inputsize, size_t* outputsize,
     unsigned int i, input = 0, output = 0, chans = 0;
 
     for(i = 0; i < survey -> num_passes; i++) {
-        input += survey -> nsubs * (survey -> pass_parameters[i].ncalls / num_devices) / survey -> pass_parameters[i].binsize;
-        output += (((survey -> pass_parameters[i].ncalls / num_devices) * survey -> pass_parameters[i].calldms)) / survey -> pass_parameters[i].binsize;
+        input += survey -> dedispSubbands * (survey -> pass_parameters[i].ncalls / num_devices) 
+                 / survey -> pass_parameters[i].binsize;
+        output += (((survey -> pass_parameters[i].ncalls / num_devices) * survey -> pass_parameters[i].calldms)) 
+                 / survey -> pass_parameters[i].binsize;
         chans += survey -> nchans / survey -> pass_parameters[i].binsize;
     }
 
     // First pass's binsize is greater than 1, override input
     if (survey -> pass_parameters[0].binsize > 1) {
-        input = survey -> nsubs * (survey -> pass_parameters[0].ncalls / num_devices);
+        input = survey -> dedispSubbands * (survey -> pass_parameters[0].ncalls / num_devices);
         chans = survey -> nchans;
     }
 
@@ -226,7 +239,8 @@ int calculate_nsamp_subband(int maxshift, size_t *inputsize, size_t* outputsize,
 
     *inputsize = max(input, chans) * (survey -> nsamp + maxshift) * sizeof(float);
     *outputsize = max(output, input) * (survey -> nsamp + maxshift) * sizeof(float);
-    printf("[Subband] Input size: %d MB, output size: %d MB\n", (int) (*inputsize / 1024 / 1024), (int) (*outputsize/1024/1024));
+    printf("[Subband] Input size: %d MB, output size: %d MB\n", (int) (*inputsize / 1024 / 1024), 
+                                                                (int) (*outputsize/1024/1024));
 
     return survey -> nsamp;
 }

@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pelican>
+
+<configuration version="1.0">
+
+    <nodesets>
+        <nodeset name="FixedParameters">
+            <samplesPerPacket value="1"/>
+            <nRawPolarisations value="2"/>
+            <dataBitSize value="16"/>
+            <totalComplexSubbands value="256"/>
+        </nodeset>
+
+        <nodeset name="ChangeParameters">
+            <clock value="40"/>
+            <subbandsPerPacket value="256"/>
+            <outputChannelsPerSubband value="2"/>
+            <udpPacketsPerIteration value="256"/>
+            <integrateTimeBins value="1"/>
+            <topChannelFrequency value="154.6875"/>
+        </nodeset>
+    </nodesets>
+
+  <pipeline>
+
+    <buffers>
+        <TimeSeriesDataSetC32>
+            <buffer maxSize="4210688000" maxChunkSize="4210688"/>
+        </TimeSeriesDataSetC32>
+    </buffers>
+
+    <chunkers>
+    
+        <LofarChunker>
+            <import nodeset="FixedParameters"/>
+            <import nodeset="ChangeParameters"/>
+            <data type="TimeSeriesDataSetC32"/>
+            <connection host="192.168.8.211" port="10000"/>
+        </LofarChunker>
+        
+    </chunkers>
+
+    <clients>
+      <LofarStreamDataClient>
+        <data type="TimeSeriesDataSetC32" adapter="AdapterTimeSeriesDataSet"/>
+      </LofarStreamDataClient>
+    </clients>
+
+    <adapters>
+    
+        <AdapterTimeSeriesDataSet>
+            <import nodeset="FixedParameters"/>
+            <import nodeset="ChangeParameters"/>
+            <fixedSizePackets value="false" />
+        </AdapterTimeSeriesDataSet>
+        
+    </adapters>
+
+    <modules>
+    
+        <PPFChanneliser>
+            <import nodeset="FixedParameters"/>
+            <import nodeset="ChangeParameters"/>
+            <processingThreads value="4" />
+            <filter nTaps="8" filterWindow="kaiser"/>
+        </PPFChanneliser>
+
+        <StokesGenerator />
+
+        <MdsmModule>
+            <observationfile filepath="data/gmrt_mdsm_obs.xml" />
+            <createOutputBlob value="0" />
+        </MdsmModule>
+
+        <StokesIntegrator>
+            <import nodeset="FixedParameters"/>
+            <import nodeset="ChangeParameters"/>
+        </StokesIntegrator>
+
+    </modules>
+
+    <output>
+
+      <dataStreams>
+          <stream name="TimeSeriesDataSetC32"  listeners="SigprocStokesWriter" active="true"/>
+          <stream name="SpectrumDataSetStokes" listeners="SigprocStokesWriter"/>
+          <stream name="DedispersedTimeSeriesF32" listeners="DedispersedDataWriter"/>
+      </dataStreams>
+
+      <streamers>
+          <SigprocStokesWriter active="true">
+              <import nodeset="FixedParameters"/>
+              <import nodeset="ChangeParameters"/>
+              <file filepath="gmrt_raw.fil" />
+              <params telescope="GMRT" nPolsToWrite="1"/>
+          </SigprocStokesWriter>
+          <DedispersedDataWriter active="false">
+              <import nodeset="FixedParameters"/>
+              <import nodeset="ChangeParameters"/>
+              <file prefix="/data/DD" />
+              <numberOfChannels value="1"/>
+              <DMs values="0.0, 26.833" />
+          </DedispersedDataWriter>
+      </streamers>
+      
+    </output>
+
+  </pipeline>
+  
+</configuration>
+
+

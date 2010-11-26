@@ -9,11 +9,11 @@ CC = $(CCC) $(DFITS) $(DFFTW) -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
 
 NVCC 		:= nvcc
 CUDA_PATH     	:= /usr/local/cuda
-CUDA_SDK_PATH 	:= /usr/local/cudaSDK/C
+CUDA_SDK_PATH 	:= /home/harsha/NVIDIA_GPU_Computing_SDK/C
 INC		:= -I. -I${CUDA_SDK_PATH}/common/inc -I${CUDA_PATH}/include
 LDFLAGS 	:= -L${CUDA_PATH}/lib -L${CUDA_PATH}/lib64 -L${CUDA_SDK_PATH}/lib \
 	          -L${CUDA_SDK_PATH}/common/lib -L/lib \
-        	  -lcuda -lcudart -lcutil -lm
+        	  -lcuda -lcudart -lcutil_x86_64 -lm
 	
 ############################ CUDA DEDISPERSE ###################################
 
@@ -38,6 +38,10 @@ subband:
 
 average:
 	$(NVCC) -o average average.cu $(LDFLAGS) $(INC) -L/lib
+	rm -f *.cu.o *.linkinfo
+	
+channeliser:
+	$(NVCC) -o channeliser channeliser.cu $(LDFLAGS) $(INC) -L/lib -lcufft
 	rm -f *.cu.o *.linkinfo
 
 brute_dedisp:
