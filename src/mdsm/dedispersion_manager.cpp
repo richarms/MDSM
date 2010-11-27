@@ -7,6 +7,8 @@
 #include <QDomElement>
 #include <QFile>
 
+#include "math.h"
+
 // Forward declarations
 extern "C" void* call_dedisperse(void* thread_params);
 extern "C" DEVICES* call_initialise_devices(SURVEY *survey);
@@ -249,11 +251,13 @@ int calculate_nsamp_subband(int maxshift, size_t *inputsize, size_t* outputsize,
 int calculate_nsamp_brute(int maxshift, size_t *inputsize, size_t* outputsize, unsigned long int memory)
 {
     if (survey -> nsamp == 0)
-    	survey -> nsamp = ((memory * 1000 * 0.99 / sizeof(float)) - maxshift * survey -> nchans) / (survey -> nchans + survey -> tdms / num_devices);
+    	survey -> nsamp = ((memory * 1000 * 0.99 / sizeof(float)) - maxshift * survey -> nchans) 
+    	                    / (survey -> nchans + survey -> tdms / num_devices);
 
     *inputsize = (survey -> nsamp + maxshift) * survey -> nchans * sizeof(float);
     *outputsize = survey -> nsamp * survey -> tdms * sizeof(float) / num_devices;
-    printf("[Brute Force] Input size: %d MB, output size: %d MB\n", (int) (*inputsize / 1024 / 1024), (int) (*outputsize/1024/1024));
+    printf("[Brute Force] Input size: %d MB, output size: %d MB\n", 
+            (int) (*inputsize / 1024 / 1024), (int) (*outputsize/1024/1024));
 
 	return survey -> nsamp;
 }
@@ -261,10 +265,32 @@ int calculate_nsamp_brute(int maxshift, size_t *inputsize, size_t* outputsize, u
 // Calculate number of samples which can be loaded at once (calls appropriate method)
 int calculate_nsamp(int maxshift, size_t *inputsize, size_t* outputsize, unsigned long int memory)
 {
+    unsigned nsamp;
+       
 	if (survey -> useBruteForce)
-		return calculate_nsamp_brute(maxshift, inputsize, outputsize, memory);
+		nsamp = calculate_nsamp_brute(maxshift, inputsize, outputsize, memory);
 	else
-		return calculate_nsamp_subband(maxshift, inputsize, outputsize, memory);
+		nsamp = calculate_nsamp_subband(maxshift, inputsize, outputsize, memory);
+		
+	// If performing channelisation, change allocations for now
+	if (survey -> performChannelisation) {   
+	    
+	    unsigned long int tempInput = memory * 1024* 0.95 / 4 * 3;
+	    unsigned long int tempOutput = memory * 1024 * 0.95 / 4;
+	    
+	    // Check if proposed nsamp will fit in memory
+	    if (tempInput < *inputsize || tempOutput < *outputsize) {
+	        fprintf(stderr, "Too many samples or DMs, set different parameters");
+	        exit(-1);
+	    }
+	    *inputsize = tempInput;
+	    *outputsize = tempOutput;
+	    
+	    printf("[Channelisation] Input size: %d MB, output size: %d MB\n", 
+            (int) (*inputsize / 1024 / 1024), (int) (*outputsize/1024/1024));
+	}
+	
+	return nsamp;
 }
 
 // DM delay calculation
@@ -304,12 +330,14 @@ float* initialiseMDSM(SURVEY* input_survey)
     			 survey -> pass_parameters[survey -> num_passes - 1].highdm;
     maxshift = dmshifts[survey -> nchans - 1] * hiDM / survey -> tsamp;
     survey -> maxshift = maxshift;
+    
+    // Set maxshift to next power of two
+    survey -> maxshift = maxshift = pow(2, ceil(log2(maxshift)));
 
     // Calculate nsamp
     inputsize = (size_t *) malloc(sizeof(size_t));
     outputsize = (size_t *) malloc(sizeof(size_t));
     survey -> nsamp = calculate_nsamp(maxshift, inputsize, outputsize, devices -> minTotalGlobalMem);
-
 
     // Calculate output dedispersion size
     size_t outsize = 0;

@@ -32,7 +32,7 @@ __global__ void calculate_intensities(cufftComplex *inbuff, float *outbuff, int 
     }
 }
 
-int nchans = 32, nsamp = 8192, nsubs = 512, npols = 2;
+int nchans = 4, nsamp = 32768, nsubs = 512, npols = 2;
 int gridsize = 128, blocksize = 128;
 
 // Process command-line parameters
@@ -104,6 +104,7 @@ int main(int argc, char *argv[])
 
    // Create plan
    cufftPlan1d(&plan, nchans, CUFFT_C2C, nsubs * npols * (nsamp / nchans));
+   printf("%d\n", nsubs * npols * (nsamp / nchans));
 
    // Execute FFT on GPU
    cudaEventRecord(event_start, 0);

@@ -208,44 +208,55 @@ void brute_force_dedispersion(float *d_input, float *d_output, THREAD_PARAMS* pa
 	cudaEventElapsedTime(&timestamp, event_start, event_stop);
 	printf("%d: Performed Brute-Force Dedispersion %d: %lf\n", (int) (time(NULL) - params -> start),
 															   params -> thread_num, timestamp);
-
 }
 
 // Perform channelisation and intensity calculation on the GPU
-void channelise(cufftComplex *d_input, float *d_output, THREAD_PARAMS* params, 
-                              cudaEvent_t event_start, cudaEvent_t event_stop, int maxshift)
+void channelise(cufftComplex *d_input, float *d_output, THREAD_PARAMS* params,
+                              cudaEvent_t event_start, cudaEvent_t event_stop)
 {
     // NOTE: This method will take care of discrepancies in nsamp and nchans 
     //       between these kernels with the dedispersion ones
     
     // Define function variables;
     SURVEY *survey = params -> survey;
-    unsigned chansPerSubband = survey -> nchans / survey -> nsubs;
+    unsigned chansPerSubband = survey -> nchans / survey -> nsubs,
+             numSamples = survey -> nsamp + survey -> maxshift;
     float timestamp;
 
     // ------------------------------------- Perform Channelisation on GPU --------------------------------------
     
+    printf("CUFFT_PLAN: %d %d %d\n", numSamples * chansPerSubband, survey -> nsubs, survey -> npols);
+    
     // Create Cufft plan
     cufftHandle plan;
-    cufftPlan1d(&plan, chansPerSubband, CUFFT_C2C, survey -> nsamp * survey -> nsubs * survey -> npols);
+    cufftPlan1d(&plan, chansPerSubband, CUFFT_C2C, numSamples * survey -> nsubs * survey -> npols);
+
     cudaEventRecord(event_start, 0);
     cufftExecC2C(plan, d_input, d_input, CUFFT_FORWARD); 
     cudaEventRecord(event_stop, 0);
 	cudaEventSynchronize(event_stop);
 	cudaEventElapsedTime(&timestamp, event_start, event_stop);
-	printf("%d: Performed Channelisation %d: %lf\n", (int) (time(NULL) - params -> start),
+	printf("%d: Performed Channelisation in %d: %lf\n", (int) (time(NULL) - params -> start),
 														    params -> thread_num, timestamp);
 															   
     // ------------------------------------- Calculate intensities on GPU --------------------------------------
    
     // Calculate intensity and perform transpose in memory
     cudaEventRecord(event_start, 0);
-    calculate_intensities<<<dim3(survey -> nsamp / 128, 1), 128>>>(d_input, d_output, survey -> nsamp, 
+    calculate_intensities<<<dim3(numSamples / 128, 1), 128>>>(d_input, d_output, numSamples * chansPerSubband, 
                                                   survey -> nsubs, chansPerSubband, survey -> npols);
     cudaEventRecord(event_stop, 0);
     cudaEventSynchronize(event_stop);
     cudaEventElapsedTime(&timestamp, event_start, event_stop);
-    printf("Processed Intensities in: %lfms\n", timestamp);
+    printf("%d: Processed Intensities in %d: %lf\n", (int) (time(NULL) - params -> start),
+														    params -> thread_num, timestamp);
+    
+    // Copy output to input
+    cutilSafeCall( cudaMemcpy((float *) d_input, d_output, numSamples * survey -> nchans * sizeof(float), 
+                              cudaMemcpyDeviceToDevice) );
+
+    // Destroy plan                              
+    cufftDestroy(plan);
     
     // Returns nsamp/chansPerSubband samples with nchans (full) channels
 }
@@ -270,9 +281,6 @@ void* dedisperse(void* thread_params)
     cutilSafeCall( cudaMalloc((void **) &d_output, params -> outputsize));
     cutilSafeCall( cudaMemcpyToSymbol(dm_shifts, params -> dmshifts, nchans * sizeof(nchans)) );
 
-    // Temporary store for maxshift
-    float *tempshift = (float *) malloc(maxshift * nchans * sizeof(float));
-
     // Initialise events / performance timers
     cudaEvent_t event_start, event_stop;
     float timestamp;
@@ -287,32 +295,15 @@ void* dedisperse(void* thread_params)
 
             // Read input data into GPU memory
             cudaEventRecord(event_start, 0);
-            if (loop_counter == 1) {
-                // First iteration, no available extra samples, so load everything to GPU memory
-                cutilSafeCall( cudaMemcpy(d_input, params -> input, 
-                                          (nsamp + maxshift) * nchans * sizeof(float), cudaMemcpyHostToDevice) );
-
-                // Keep a copy of maxshift in memory
-                for(i = 0; i < nchans; i++)
-                    memcpy(tempshift + (maxshift * i), params -> input + i * (nsamp + maxshift) + nsamp, 
-                           maxshift * sizeof(float)); // NOTE: Optimise
-            }
-            else {
-                // Copy previous maxshift to input buffer
-                for(i = 0; i < nchans; i++)
-                    memcpy(params -> input + i * (nsamp + maxshift),  tempshift + maxshift * i, 
-                           maxshift * sizeof(float)); // NOTE: Optimise
-
-               // cutilSafeCall( cudaMemcpy(d_input, tempshift, maxshift * nchans * sizeof(float), cudaMemcpyHostToDevice) );
-                cutilSafeCall( cudaMemcpy(d_input, params -> input,
-                                          (nsamp + maxshift) * nchans * sizeof(float), cudaMemcpyHostToDevice) );
-
-                // Keep a copy of maxshift in memory
-                for(i = 0; i < nchans; i++)
-                    memcpy(tempshift + (maxshift * i), params -> input + i * (nsamp + maxshift) + nsamp, 
-                           maxshift * sizeof(float)); // NOTE: Optimise
-            }
-
+    
+            // If performing channelisation, input data will contain npols polarisations with complex 64-bit values
+            if (survey -> performChannelisation)
+                cutilSafeCall( cudaMemcpy(d_input, params -> input, survey -> npols * sizeof(cufftComplex) *
+                                         (nsamp + maxshift) * nchans, cudaMemcpyHostToDevice) );
+            else
+                cutilSafeCall( cudaMemcpy(d_input, params -> input, (nsamp + maxshift) * nchans * sizeof(float), 
+                                          cudaMemcpyHostToDevice) );
+    
             cudaEventRecord(event_stop, 0);
             cudaEventSynchronize(event_stop);
             cudaEventElapsedTime(&timestamp, event_start, event_stop);
@@ -327,7 +318,14 @@ void* dedisperse(void* thread_params)
         if (!(ret == 0 || ret == PTHREAD_BARRIER_SERIAL_THREAD))
             { fprintf(stderr, "Error during barrier synchronisation 1 [thread]\n"); exit(0); }
 
+        // Perform operation on GPU data
         if (loop_counter >= params -> iterations){
+
+            // Perform channelisation 
+            if (survey -> performChannelisation)
+                channelise((cufftComplex*) d_input, d_output, params, event_start, event_stop);
+                
+            // Perform subbands dedispersion or brute force dedispersion    
         	if (survey -> useBruteForce)
         		brute_force_dedispersion(d_input,d_output, params, event_start, event_stop, maxshift);
         	else
