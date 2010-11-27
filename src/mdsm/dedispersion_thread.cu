@@ -212,11 +212,8 @@ void brute_force_dedispersion(float *d_input, float *d_output, THREAD_PARAMS* pa
 
 // Perform channelisation and intensity calculation on the GPU
 void channelise(cufftComplex *d_input, float *d_output, THREAD_PARAMS* params,
-                              cudaEvent_t event_start, cudaEvent_t event_stop)
+                cudaEvent_t event_start, cudaEvent_t event_stop)
 {
-    // NOTE: This method will take care of discrepancies in nsamp and nchans 
-    //       between these kernels with the dedispersion ones
-    
     // Define function variables;
     SURVEY *survey = params -> survey;
     unsigned chansPerSubband = survey -> nchans / survey -> nsubs,
@@ -224,10 +221,6 @@ void channelise(cufftComplex *d_input, float *d_output, THREAD_PARAMS* params,
     float timestamp;
 
     // ------------------------------------- Perform Channelisation on GPU --------------------------------------
-    
-    printf("CUFFT_PLAN: %d %d %d\n", numSamples * chansPerSubband, survey -> nsubs, survey -> npols);
-    
-    // Create Cufft plan
     cufftHandle plan;
     cufftPlan1d(&plan, chansPerSubband, CUFFT_C2C, numSamples * survey -> nsubs * survey -> npols);
 
@@ -237,28 +230,71 @@ void channelise(cufftComplex *d_input, float *d_output, THREAD_PARAMS* params,
 	cudaEventSynchronize(event_stop);
 	cudaEventElapsedTime(&timestamp, event_start, event_stop);
 	printf("%d: Performed Channelisation in %d: %lf\n", (int) (time(NULL) - params -> start),
-														    params -> thread_num, timestamp);
+														       params -> thread_num, timestamp);
 															   
     // ------------------------------------- Calculate intensities on GPU --------------------------------------
    
     // Calculate intensity and perform transpose in memory
     cudaEventRecord(event_start, 0);
     calculate_intensities<<<dim3(numSamples / 128, 1), 128>>>(d_input, d_output, numSamples * chansPerSubband, 
-                                                  survey -> nsubs, chansPerSubband, survey -> npols);
+                                                              survey -> nsubs, chansPerSubband, survey -> npols);
     cudaEventRecord(event_stop, 0);
     cudaEventSynchronize(event_stop);
     cudaEventElapsedTime(&timestamp, event_start, event_stop);
     printf("%d: Processed Intensities in %d: %lf\n", (int) (time(NULL) - params -> start),
 														    params -> thread_num, timestamp);
-    
     // Copy output to input
     cutilSafeCall( cudaMemcpy((float *) d_input, d_output, numSamples * survey -> nchans * sizeof(float), 
                               cudaMemcpyDeviceToDevice) );
-
     // Destroy plan                              
     cufftDestroy(plan);
+}
+
+// Perform channelisation and intensity calculation on the GPU
+void transpose(float *d_input, float *d_output, THREAD_PARAMS* params,
+                cudaEvent_t event_start, cudaEvent_t event_stop)
+{   
+    // Define function variables;
+    SURVEY *survey = params -> survey;
+    float timestamp;
+    unsigned chansPerSubband = survey -> nchans / survey -> nsubs,
+             numSamples = (survey -> nsamp + survey -> maxshift) * chansPerSubband;
+															   
+    // -------------------------------- Separate Polarisations ---------------------------------
+    cudaEventRecord(event_start, 0);
+    seperateXYPolarisations<<<dim3(numSamples/survey -> nsubs, 1), survey -> nsubs >>>
+                              (d_input, d_output, numSamples, survey -> nsubs);
+    cudaEventRecord(event_stop, 0);
+    cudaEventSynchronize(event_stop);
+    cudaEventElapsedTime(&timestamp, event_start, event_stop);
+    printf("%d: Separated X and Y polarisations in: %lf\n", (int) (time(NULL) - params -> start), timestamp);
     
-    // Returns nsamp/chansPerSubband samples with nchans (full) channels
+    // -------------------------------- Transpose Polarisations ---------------------------------
+    cudaEventRecord(event_start, 0);
+    transposeDiagonal<<<dim3(survey -> nsubs/TILE_DIM, numSamples / TILE_DIM), 
+                        dim3(TILE_DIM, BLOCK_ROWS) >>>
+                        (d_output, d_input, survey -> nsubs, numSamples);
+    transposeDiagonal<<<dim3(survey -> nsubs/TILE_DIM, numSamples / TILE_DIM), 
+                        dim3(TILE_DIM, BLOCK_ROWS) >>>
+                        (d_output + numSamples * survey -> nsubs, d_input + numSamples * survey -> nsubs, 
+                         survey -> nsubs, numSamples);
+    cudaEventRecord(event_stop, 0);
+    cudaEventSynchronize(event_stop);
+    cudaEventElapsedTime(&timestamp, event_start, event_stop);
+    printf("%d: Performed transpose in: %lfms\n", (int) (time(NULL) - params -> start), timestamp);
+        
+    // Copy input back to output (to keep the input buffer as the largest)
+    cutilSafeCall( cudaMemcpy(d_output, d_input, numSamples * survey -> nsubs * survey -> npols * sizeof(float),
+                              cudaMemcpyDeviceToDevice));
+    
+    // -------------------------------- Extract Polarisations ---------------------------------
+    cudaEventRecord(event_start, 0);
+    expandValues<<<dim3(1024, 1), survey -> nsubs >>>
+                       (d_output, d_input, numSamples * survey -> nsubs * survey -> npols);
+    cudaEventRecord(event_stop, 0);
+    cudaEventSynchronize(event_stop);
+    cudaEventElapsedTime(&timestamp, event_start, event_stop);
+    printf("%d: Expanded polarisations in: %lfms\n", (int) (time(NULL) - params -> start), timestamp);
 }
 
 // Dedispersion algorithm
@@ -321,7 +357,11 @@ void* dedisperse(void* thread_params)
         // Perform operation on GPU data
         if (loop_counter >= params -> iterations){
 
-            // Perform channelisation 
+            // Perform matrix transpose 
+            if (survey -> performTranspose)
+                transpose(d_input, d_output, params, event_start, event_stop);
+
+            // Perform channelisation and calculate intensities
             if (survey -> performChannelisation)
                 channelise((cufftComplex*) d_input, d_output, params, event_start, event_stop);
                 

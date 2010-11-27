@@ -18,7 +18,7 @@ DoubleBuffer::DoubleBuffer(unsigned nsamp, unsigned nchans, unsigned npols)
 
     _readBuff = _writePtr = _fullBuffers = 0;
     _writeBuff = 1;
-    _sampledBuffered = nsamp;
+    _samplesBuffered = nsamp;
     _buffLen = nsamp * nchans * npols * sizeof(float);
 }
 
@@ -27,7 +27,7 @@ float *DoubleBuffer::prepareRead()
 {
     // Busy wait for enough data, for now
     while (_fullBuffers < 1)
-        sleep(0.2);
+        sleep(0.001);
         
     // Data available
     return _buffer[_readBuff];
@@ -39,48 +39,47 @@ void DoubleBuffer::readReady()
     // Mutex buffer control
     _mutex.lock();
     _fullBuffers--;
-    printf("========================== Full Buffers: %d ==========================\n", _fullBuffers);
     _mutex.unlock();
+    printf("========================== Full Buffers: %d ==========================\n", _fullBuffers);
 }
 
 // Write data to buffer
-unsigned DoubleBuffer::writeData(unsigned nsamp, unsigned nchans, float* data, bool interleavedMode)
+void DoubleBuffer::writeData(unsigned nsamp, unsigned nchans, float* data, bool interleavedMode)
 {   
+    // Wait for buffer to be read
     while(_fullBuffers == 2)
-        ; // Wait for buffer to be read
+        sleep(0.001);
 
     if (interleavedMode) {
     
+        // Store one time spectrum for all channels at a time
         for(unsigned i = 0; i < nsamp; i++) {
-            memcpy(_buffer[_writeBuff] + _writePtr * _nchans * _npols, 
-                   data, nsamp * nchans * _npols * sizeof(float));
+            for(unsigned j = 0; j < _npols; j++)
+                for(unsigned k = 0; k < nchans; k++)
+                    _buffer[_writeBuff][j * _nsamp * _nchans + _writePtr * nchans + k] = 
+                        data[i * _npols * nchans + k * _npols + j];
                 
-            // Check if writing buffer is full
-            if (_writePtr++ > _sampledBuffered) {
+            // Check if writing buffer is now full
+            if (_writePtr++ > _samplesBuffered) {
             
                 // Check if reading buffer has been read
-                while(_fullBuffers == 1) {
+                while(_fullBuffers == 1)
                     sleep(0.001);
-                     // wait for buffer to be read
-                 }
             
+                // Lock critical section with mutex, and swap buffers
                 _mutex.lock();
-                
                 _writePtr = 0;
                 _fullBuffers++;
-                
-                // Swap buffers
                 unsigned temp = _writeBuff;
                 _writeBuff = _readBuff;
                 _readBuff = temp;
-                printf("========================== Full Buffers: %d ==========================\n", _fullBuffers);
                 _mutex.unlock();
+                
+                printf("========================== Full Buffers: %d ==========================\n", _fullBuffers);
             }
          }
     }
     else
        { } // TODO: Implement
-        
-        return 1;
 }
 

@@ -14,14 +14,14 @@ class DoubleBuffer {
         
         float * prepareRead();
         void readReady();
-        unsigned writeData(unsigned nsamp, unsigned nchans, float* data, bool interleavedMode);
+        void writeData(unsigned nsamp, unsigned nchans, float* data, bool interleavedMode);
     
     private:
         // Buffer
         float        **_buffer;
     
         unsigned     _nsamp, _nchans, _npols, _readBuff, _writeBuff;
-        unsigned     _writePtr, _buffLen, _fullBuffers, _sampledBuffered;
+        unsigned     _writePtr, _buffLen, _fullBuffers, _samplesBuffered;
         
         QMutex       _mutex; 
 };

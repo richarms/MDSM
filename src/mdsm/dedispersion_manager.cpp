@@ -96,6 +96,7 @@ SURVEY* processSurveyParameters(QString filepath)
     survey -> use_pc_time = 1;
     survey -> single_file_mode = 0;
     survey -> performChannelisation = false;
+    survey -> performTranspose = false;
 
     // Start parsing observation file and generate survey parameters
     n = root.firstChild();
@@ -138,6 +139,8 @@ SURVEY* processSurveyParameters(QString filepath)
             else if(QString::compare(e.tagName(), QString("processes"), Qt::CaseInsensitive) == 0) {
                 if (e.attribute("channelise", "0").toUInt())
                     survey -> performChannelisation = true;
+                if (e.attribute("transpose", "0").toUInt())
+                    survey -> performTranspose = true;
             }
         
             // Check if user has specified GPUs to use
@@ -275,8 +278,8 @@ int calculate_nsamp(int maxshift, size_t *inputsize, size_t* outputsize, unsigne
 	// If performing channelisation, change allocations for now
 	if (survey -> performChannelisation) {   
 	    
-	    unsigned long int tempInput = memory * 1024* 0.95 / 4 * 3;
-	    unsigned long int tempOutput = memory * 1024 * 0.95 / 4;
+	    unsigned long int tempInput = memory * 1024* 0.95 / 3 * 2;
+	    unsigned long int tempOutput = memory * 1024 * 0.95 / 3;
 	    
 	    // Check if proposed nsamp will fit in memory
 	    if (tempInput < *inputsize || tempOutput < *outputsize) {
@@ -289,6 +292,7 @@ int calculate_nsamp(int maxshift, size_t *inputsize, size_t* outputsize, unsigne
 	    printf("[Channelisation] Input size: %d MB, output size: %d MB\n", 
             (int) (*inputsize / 1024 / 1024), (int) (*outputsize/1024/1024));
 	}
+	
 	
 	return nsamp;
 }
@@ -354,8 +358,8 @@ float* initialiseMDSM(SURVEY* input_survey)
     input_buffer = (float *) malloc(*inputsize);
     output_buffer = (float *) malloc(num_devices * outsize * sizeof(float));
     // Log parameters
-    printf("nchans: %d, nsamp: %d, tsamp: %f, foff: %f, fch1: %f\n", survey -> nchans, 
-           survey -> nsamp, survey -> tsamp, survey -> foff, survey -> fch1);
+    printf("nchans: %d, nsamp: %d, nsubs: %d, npols: %d, tsamp: %f, foff: %f, fch1: %f\n", survey -> nchans, 
+           survey -> nsamp, survey -> nsubs, survey -> npols, survey -> tsamp, survey -> foff, survey -> fch1);
     printf("ndms: %d, max dm: %f, maxshift: %d\n", survey -> tdms, hiDM, maxshift);
 
     if (pthread_barrier_init(&input_barrier, NULL, num_devices + 2))

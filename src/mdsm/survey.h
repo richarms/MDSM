@@ -44,7 +44,7 @@ typedef struct {
     unsigned num_gpus;
     
     // Actions performed on the GPU
-    bool performChannelisation;
+    bool performChannelisation, performTranspose;
 
 } SURVEY;
 

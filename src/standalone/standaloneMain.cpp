@@ -50,7 +50,7 @@ void process_arguments(int argc, char *argv[])
 int main(int argc, char *argv[])
 {
     unsigned  chansPerSubband, samples, shift;
-    unsigned  dataRead = 0;
+    unsigned  dataRead = 0, memSize;
     float     *inputBuffer;
     SURVEY    *survey;
     
@@ -66,6 +66,7 @@ int main(int argc, char *argv[])
     chansPerSubband = survey -> nchans / survey -> nsubs;
     samples = survey -> nsamp * chansPerSubband;
     shift = survey -> maxshift * chansPerSubband;
+    memSize = survey -> npols * survey -> nsubs * sizeof(float);
     
     // Initialise Circular Buffer
     DoubleBuffer doubleBuffer(survey -> nsamp * chansPerSubband, survey -> nsubs, nPols);
@@ -80,41 +81,17 @@ int main(int argc, char *argv[])
     chunker.start();
     chunker.setPriority(QThread::TimeCriticalPriority);
     
-    printf("nsub: %d\n", survey -> nsubs);
-    
-     // ==================== First iteration removed out of loop... ==============
+    // ======================== Store first maxshift =======================
     // Get pointer to next buffer
     float *udpBuffer = doubleBuffer.prepareRead();
     
-    // Process stokes parameters inplace
-    TYPES::i16complex *complexData = reinterpret_cast<TYPES::i16complex *>(udpBuffer);
-    memcpy(maxshift, complexData + (samples - shift) * nPols * survey -> nsubs, 
-                     shift * survey -> nsubs * survey -> npols * sizeof(float) * 2);
-    
-//    for(unsigned i = 0; i < shift; i++)
-//        for(unsigned j = 0; j < survey -> nsubs; j++) {
-//            TYPES::i16complex val = complexData[(samples - shift + i) * nPols * survey -> nsubs + j * nPols];
-            
-//            maxshift[2 * (j * shift + i)]      = val.real();
-//            maxshift[2 * (j * shift + i) + 1]  = val.imag();
-            
-//            printf("1. %d %d %d %d\n",i, j, (samples - shift + i) * nPols * survey -> nsubs + j * nPols,
-//                                            2 * (j * shift + i));
-            
-//            val = complexData[(samples - shift + i) * nPols * survey -> nsubs + j * nPols + 1];
-//                                                 
-//            maxshift[2 * (shift * survey -> nsubs + j * shift + i)]      = val.real();
-//            maxshift[2 * (shift * survey -> nsubs + j * shift + i) + 1]  = val.imag();
- 
-//             printf("2. %d %d %d %d\n",i, j,
-//                          (samples - shift + i) * nPols * survey -> nsubs + j * nPols + 1,
-//                           2 * (shift * survey -> nsubs + j * shift + i));
-
-//        }
+    // Copy first maxshift to temporary
+    memcpy(maxshift, udpBuffer + (samples - shift) * nPols * survey -> nsubs, 
+                     shift * survey -> nsubs * survey -> npols * sizeof(float));
 
     dataRead += survey -> maxshift * chansPerSubband;
     doubleBuffer.readReady();
-    // ========================  END OF FIRST ITERATION  ====================
+    // =====================================================================
 
     // Start main processing loop
     while(true) {
@@ -122,24 +99,17 @@ int main(int argc, char *argv[])
         // Get pointer to next buffer
         float *udpBuffer = doubleBuffer.prepareRead();
         
-        // Process stokes parameters inplace
-        TYPES::i16complex *complexData = reinterpret_cast<TYPES::i16complex *>(udpBuffer);
-        
         // Copy maxshift to buffer
-        memcpy(inputBuffer, maxshift, shift * survey -> nsubs * survey -> npols * sizeof(float) * 2);
+        memcpy(inputBuffer, maxshift, shift * memSize);
         
         // Copy UDP data to buffer
-        memcpy(inputBuffer + shift * survey -> nsubs * survey -> npols, complexData, 
-               samples * survey -> nsubs * survey -> npols * sizeof(float));
+        memcpy(inputBuffer + shift * survey -> nsubs * survey -> npols, udpBuffer, samples * memSize);
         
         // Copy new maxshift
-	    memcpy(maxshift, complexData + (samples - shift) * nPols * survey -> nsubs, 
-               shift * survey -> nsubs * survey -> npols * sizeof(float));
+	    memcpy(maxshift, udpBuffer + (samples - shift) * nPols * survey -> nsubs, shift * memSize);
             
         doubleBuffer.readReady();
         dataRead += survey -> nsamp;
-        
-        printf("Calling MDSM\n");
         
         // Call MDSM for dedispersion
         unsigned int samplesProcessed;
