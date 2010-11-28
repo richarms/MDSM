@@ -253,7 +253,7 @@ __global__ void calculate_intensities(cufftComplex *inbuff, float *outbuff, int 
                 intensity += tempval.x * tempval.x + tempval.y * tempval.y;
             }
 
-            // Store in output buffer
+            // Store in output buffer (relocate channels)
             outbuff[(c * nchans + s % nchans) * (nsamp / nchans) + s / nchans ] = intensity;
         }
     }
@@ -279,17 +279,17 @@ __global__ void seperateXYPolarisations(float *input, float *output, int nsamp,
 }
 
 // Expand polarisations from 16-bit complex to 32-bit complex
-__global__ void expandValues(float *input, float *output, int nvalues)
+__global__ void expandValues(int *input, float *output, int nvalues)
 {
     // Assign each thread block to one value
     for(int s = threadIdx.x + blockIdx.x * blockDim.x; 
             s < nvalues;
             s += gridDim.x * blockDim.x)  {
                  
-        // Load polarisations and save in output
-        int val = (int) input[s];
-        output[s * 2]     =     val     && 65535;
-        output[s * 2 + 1] = (val >> 16) && 65535;
+        // Load polarisations and save in output (REAL AND IMAGINARY ARE INVERTED!!)
+        int val = input[s];
+        output[s * 2]     = (float) ((val >> 16) & 65535);
+        output[s * 2 + 1] = (float) (   val     & 65535 );
     }
 }
 

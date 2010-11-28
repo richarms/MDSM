@@ -62,7 +62,8 @@ DEVICES* initialise_devices(SURVEY* survey)
 }
 
 // Perform subband dedispersion
-void subband_dedispersion(float *d_input, float *d_output, THREAD_PARAMS* params, cudaEvent_t event_start, cudaEvent_t event_stop)
+void subband_dedispersion(float *d_input, float *d_output, THREAD_PARAMS* params, 
+                          cudaEvent_t event_start, cudaEvent_t event_stop)
 {
 	// Declare function variables
     int maxshift = params -> maxshift, tid = params -> thread_num, num_threads = params -> num_threads;
@@ -91,7 +92,8 @@ void subband_dedispersion(float *d_input, float *d_output, THREAD_PARAMS* params
 		if (binsize != 1) {        // if binsize is 1, no need to perform binning
 			if (i == 0) {          // Original raw data not required, special case
 				inplace_binning_kernel<<< gridDim_bin, blockDim_bin >>>(d_input, nsamp + maxshift, nchans, kernelBin);
-				inplace_memory_reorganisation<<< gridDim_bin, blockDim_bin >>>(d_input, nsamp + maxshift, nchans, kernelBin);
+				inplace_memory_reorganisation<<< gridDim_bin, blockDim_bin >>>(d_input, nsamp + maxshift, 
+				                                                               nchans, kernelBin);
 				cutilSafeCall( cudaMemset(d_input + (nsamp + maxshift) * nchans / binsize, 0,
 										 ((nsamp + maxshift) * nchans - (nsamp + maxshift) * nchans / binsize) 
 										  * sizeof(float)));
@@ -223,7 +225,7 @@ void channelise(cufftComplex *d_input, float *d_output, THREAD_PARAMS* params,
     // ------------------------------------- Perform Channelisation on GPU --------------------------------------
     cufftHandle plan;
     cufftPlan1d(&plan, chansPerSubband, CUFFT_C2C, numSamples * survey -> nsubs * survey -> npols);
-
+    
     cudaEventRecord(event_start, 0);
     cufftExecC2C(plan, d_input, d_input, CUFFT_FORWARD); 
     cudaEventRecord(event_stop, 0);
@@ -231,9 +233,9 @@ void channelise(cufftComplex *d_input, float *d_output, THREAD_PARAMS* params,
 	cudaEventElapsedTime(&timestamp, event_start, event_stop);
 	printf("%d: Performed Channelisation in %d: %lf\n", (int) (time(NULL) - params -> start),
 														       params -> thread_num, timestamp);
-															   
+														       
     // ------------------------------------- Calculate intensities on GPU --------------------------------------
-   
+                                
     // Calculate intensity and perform transpose in memory
     cudaEventRecord(event_start, 0);
     calculate_intensities<<<dim3(numSamples / 128, 1), 128>>>(d_input, d_output, numSamples * chansPerSubband, 
@@ -246,6 +248,7 @@ void channelise(cufftComplex *d_input, float *d_output, THREAD_PARAMS* params,
     // Copy output to input
     cutilSafeCall( cudaMemcpy((float *) d_input, d_output, numSamples * survey -> nchans * sizeof(float), 
                               cudaMemcpyDeviceToDevice) );
+                              
     // Destroy plan                              
     cufftDestroy(plan);
 }
@@ -282,19 +285,19 @@ void transpose(float *d_input, float *d_output, THREAD_PARAMS* params,
     cudaEventSynchronize(event_stop);
     cudaEventElapsedTime(&timestamp, event_start, event_stop);
     printf("%d: Performed transpose in: %lfms\n", (int) (time(NULL) - params -> start), timestamp);
-        
+           
     // Copy input back to output (to keep the input buffer as the largest)
     cutilSafeCall( cudaMemcpy(d_output, d_input, numSamples * survey -> nsubs * survey -> npols * sizeof(float),
                               cudaMemcpyDeviceToDevice));
-    
+
     // -------------------------------- Extract Polarisations ---------------------------------
     cudaEventRecord(event_start, 0);
     expandValues<<<dim3(1024, 1), survey -> nsubs >>>
-                       (d_output, d_input, numSamples * survey -> nsubs * survey -> npols);
+                       ((int *) d_output, d_input, numSamples * survey -> nsubs * survey -> npols);
     cudaEventRecord(event_stop, 0);
     cudaEventSynchronize(event_stop);
     cudaEventElapsedTime(&timestamp, event_start, event_stop);
-    printf("%d: Expanded polarisations in: %lfms\n", (int) (time(NULL) - params -> start), timestamp);
+    printf("%d: Expanded polarisations in: %lfms\n", (int) (time(NULL) - params -> start), timestamp); 
 }
 
 // Dedispersion algorithm

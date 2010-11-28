@@ -20,6 +20,8 @@ DoubleBuffer::DoubleBuffer(unsigned nsamp, unsigned nchans, unsigned npols)
     _writeBuff = 1;
     _samplesBuffered = nsamp;
     _buffLen = nsamp * nchans * npols * sizeof(float);
+    
+    printf("=============== Buffers Initialised - read: %d, write: %d ================\n", _readBuff, _writeBuff);
 }
 
 // Lock buffer segment for reading
@@ -56,7 +58,7 @@ void DoubleBuffer::writeData(unsigned nsamp, unsigned nchans, float* data, bool 
         for(unsigned i = 0; i < nsamp; i++) {
             for(unsigned j = 0; j < _npols; j++)
                 for(unsigned k = 0; k < nchans; k++)
-                    _buffer[_writeBuff][j * _nsamp * _nchans + _writePtr * nchans + k] = 
+                    _buffer[_writeBuff][_writePtr * nchans * _npols + nchans * j + k] = 
                         data[i * _npols * nchans + k * _npols + j];
                 
             // Check if writing buffer is now full

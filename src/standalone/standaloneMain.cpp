@@ -10,8 +10,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define SQR(x) (x * x)
-
 // Global arguments
 unsigned sampPerPacket = 1, subsPerPacket = 512, 
          sampSize = 16, port = 10000, nPols = 2, sampPerSecond = 97656;
@@ -49,8 +47,7 @@ void process_arguments(int argc, char *argv[])
 // Main method
 int main(int argc, char *argv[])
 {
-    unsigned  chansPerSubband, samples, shift;
-    unsigned  dataRead = 0, memSize;
+    unsigned  chansPerSubband, samples, shift, memSize;
     float     *inputBuffer;
     SURVEY    *survey;
     
@@ -84,13 +81,10 @@ int main(int argc, char *argv[])
     // ======================== Store first maxshift =======================
     // Get pointer to next buffer
     float *udpBuffer = doubleBuffer.prepareRead();
-    
+       
     // Copy first maxshift to temporary
     memcpy(maxshift, udpBuffer + (samples - shift) * nPols * survey -> nsubs, 
                      shift * survey -> nsubs * survey -> npols * sizeof(float));
-
-    dataRead += survey -> maxshift * chansPerSubband;
-    doubleBuffer.readReady();
     // =====================================================================
 
     // Start main processing loop
@@ -104,21 +98,18 @@ int main(int argc, char *argv[])
         
         // Copy UDP data to buffer
         memcpy(inputBuffer + shift * survey -> nsubs * survey -> npols, udpBuffer, samples * memSize);
-        
+               
         // Copy new maxshift
 	    memcpy(maxshift, udpBuffer + (samples - shift) * nPols * survey -> nsubs, shift * memSize);
-            
+	                
         doubleBuffer.readReady();
-        dataRead += survey -> nsamp;
         
         // Call MDSM for dedispersion
         unsigned int samplesProcessed;
-	    next_chunk(dataRead, samplesProcessed);
-	    if (!start_processing(dataRead)) {
+	    next_chunk(shift + samples, samplesProcessed);
+	    if (!start_processing(survey -> nsamp + survey -> maxshift)) {
 	        printf("MDSM stopped....\n");
 	    }
-	    
-        dataRead = 0;
     } 
 
 }
