@@ -6,7 +6,7 @@
 //#define FERMI
 
 // Stores temporary shift values
-__device__ __constant__ float dm_shifts[8192];
+__device__ __constant__ float dm_shifts[16384];
 
 // Stores output value computed in inner loop for each sample
 //#ifdef FERMI

@@ -12,16 +12,18 @@ class DoubleBuffer {
         DoubleBuffer(unsigned nsamp, unsigned nchans, unsigned npols);
         ~DoubleBuffer() { }    
         
-        float * prepareRead();
         void readReady();
+        float * prepareRead(double *timestamp, double *blockrate);
         void writeData(unsigned nsamp, unsigned nchans, float* data, bool interleavedMode);
+        void setTimingVariables(double timestamp, double blockrate);
     
     private:
         // Buffer
         float        **_buffer;
     
-        unsigned     _nsamp, _nchans, _npols, _readBuff, _writeBuff;
+        unsigned     _nsamp, _nchans, _npols, _readBuff, _writeBuff, _counter;
         unsigned     _writePtr, _buffLen, _fullBuffers, _samplesBuffered;
+        double       _timestamp,_blockrate;
         
         QMutex       _mutex; 
 };

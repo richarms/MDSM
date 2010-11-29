@@ -278,12 +278,13 @@ int calculate_nsamp(int maxshift, size_t *inputsize, size_t* outputsize, unsigne
 	// If performing channelisation, change allocations for now
 	if (survey -> performChannelisation) {   
 	    
-	    unsigned long int tempInput = memory * 1024* 0.95 / 3 * 2;
-	    unsigned long int tempOutput = memory * 1024 * 0.95 / 3;
-	    
+	    unsigned long int tempInput = memory * 1024* 0.99 / 3 * 2;
+	    unsigned long int tempOutput = memory * 1024 * 0.99 / 3;
+
 	    // Check if proposed nsamp will fit in memory
-	    if (tempInput < *inputsize || tempOutput < *outputsize) {
-	        fprintf(stderr, "Too many samples or DMs, set different parameters");
+	    if (tempInput < *inputsize || tempOutput < *outputsize ||
+	        (nsamp + survey -> maxshift) * survey -> nchans * survey -> npols * 8 > tempInput) {
+	        fprintf(stderr, "Too many samples or DMs, set different parameters. This requires %.2lf GB of memory (have %.2lf GB)\n", (float)( (nsamp + survey -> maxshift) * survey -> nchans * survey -> npols * 8.0) / (float) (1024 * 1024 * 1024), tempInput / (float) (1024*1024*1024));
 	        exit(-1);
 	    }
 	    *inputsize = tempInput;
@@ -292,7 +293,6 @@ int calculate_nsamp(int maxshift, size_t *inputsize, size_t* outputsize, unsigne
 	    printf("[Channelisation] Input size: %d MB, output size: %d MB\n", 
             (int) (*inputsize / 1024 / 1024), (int) (*outputsize/1024/1024));
 	}
-	
 	
 	return nsamp;
 }

@@ -44,6 +44,10 @@ channeliser:
 	$(NVCC) -o channeliser channeliser.cu $(LDFLAGS) $(INC) -L/lib -lcufft
 	rm -f *.cu.o *.linkinfo
 
+clipper:
+	$(NVCC) -o clipper rfi_clipper.cu $(LDFLAGS) $(INC) -L/lib -lcufft
+	rm -f *.cu.o *.linkinfo
+
 brute_dedisp:
 	$(NVCC) -o brute_dedisp brute_dedisp.cu --ptxas-options=-v $(LDFLAGS) $(INC) -L/lib
 	rm -f *.cu.o *.linkinfo

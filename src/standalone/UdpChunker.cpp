@@ -84,6 +84,8 @@ void UDPChunker::run()
         if (counter == 0 && _startTime == 0) {
             prevSeqid = _startTime = _startTime == 0 ? seqid : _startTime;
             prevBlockid = _startBlockid = _startBlockid == 0 ? blockid : _startBlockid;
+            _buffer -> setTimingVariables(seqid + blockid / _samplesPerSecond * 1.0, // timestamp
+                                          1 / (_samplesPerSecond * 1.0));              // blockrate
         }
 
         // Sanity check in seqid. If the seconds counter is 0xFFFFFFFF,
@@ -124,7 +126,7 @@ void UDPChunker::run()
             prevBlockid = (prevBlockid + _samplesPerPacket) % totBlocks;
             emptyPacket.header.timestamp = prevSeqid;
             emptyPacket.header.blockSequenceNumber = prevBlockid;
-            writePacket(emptyPacket);
+//            writePacket(emptyPacket);
         }
 
         counter += packetCounter;

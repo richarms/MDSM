@@ -20,18 +20,30 @@ DoubleBuffer::DoubleBuffer(unsigned nsamp, unsigned nchans, unsigned npols)
     _writeBuff = 1;
     _samplesBuffered = nsamp;
     _buffLen = nsamp * nchans * npols * sizeof(float);
+    _counter = 0;
     
-    printf("=============== Buffers Initialised - read: %d, write: %d ================\n", _readBuff, _writeBuff);
+    printf("============== Buffers Initialised - read: %d, write: %d ==============\n", _readBuff, _writeBuff);
+}
+
+
+// Set timing variables
+void DoubleBuffer::setTimingVariables(double timestamp, double blockrate) {
+    _timestamp = timestamp;
+    _blockrate = blockrate;
 }
 
 // Lock buffer segment for reading
-float *DoubleBuffer::prepareRead()
+float *DoubleBuffer::prepareRead(double *timestamp, double *blockrate)
 {
     // Busy wait for enough data, for now
     while (_fullBuffers < 1)
         sleep(0.001);
         
     // Data available
+    _mutex.lock();
+    *timestamp = _timestamp + _blockrate * _nsamp * _counter;
+    *blockrate = _blockrate;
+    _mutex.unlock();
     return _buffer[_readBuff];
 }
 
@@ -53,7 +65,7 @@ void DoubleBuffer::writeData(unsigned nsamp, unsigned nchans, float* data, bool 
         sleep(0.001);
 
     if (interleavedMode) {
-    
+   
         // Store one time spectrum for all channels at a time
         for(unsigned i = 0; i < nsamp; i++) {
             for(unsigned j = 0; j < _npols; j++)
@@ -62,7 +74,7 @@ void DoubleBuffer::writeData(unsigned nsamp, unsigned nchans, float* data, bool 
                         data[i * _npols * nchans + k * _npols + j];
                 
             // Check if writing buffer is now full
-            if (_writePtr++ > _samplesBuffered) {
+            if (_writePtr++ > _samplesBuffered - 1) {
             
                 // Check if reading buffer has been read
                 while(_fullBuffers == 1)
@@ -75,9 +87,9 @@ void DoubleBuffer::writeData(unsigned nsamp, unsigned nchans, float* data, bool 
                 unsigned temp = _writeBuff;
                 _writeBuff = _readBuff;
                 _readBuff = temp;
-                _mutex.unlock();
-                
+                _counter++;
                 printf("========================== Full Buffers: %d ==========================\n", _fullBuffers);
+                _mutex.unlock();
             }
          }
     }

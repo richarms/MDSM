@@ -1,5 +1,6 @@
 #include "dedispersion_kernel.cu"
 #include "dedispersion_thread.h"
+#include "math.h"
 
 DEVICES* initialise_devices(SURVEY* survey)
 {
@@ -197,7 +198,6 @@ void brute_force_dedispersion(float *d_input, float *d_output, THREAD_PARAMS* pa
 
     // ------------------------------------- Perform dedispersion on GPU --------------------------------------
     cudaEventRecord(event_start, 0);
-
     float startdm = survey -> lowdm + survey -> dmstep * survey -> tdms / survey -> num_threads * params -> thread_num;
   
     // Optimised kernel
@@ -225,7 +225,7 @@ void channelise(cufftComplex *d_input, float *d_output, THREAD_PARAMS* params,
     // ------------------------------------- Perform Channelisation on GPU --------------------------------------
     cufftHandle plan;
     cufftPlan1d(&plan, chansPerSubband, CUFFT_C2C, numSamples * survey -> nsubs * survey -> npols);
-    
+       
     cudaEventRecord(event_start, 0);
     cufftExecC2C(plan, d_input, d_input, CUFFT_FORWARD); 
     cudaEventRecord(event_stop, 0);
@@ -247,8 +247,7 @@ void channelise(cufftComplex *d_input, float *d_output, THREAD_PARAMS* params,
 														    params -> thread_num, timestamp);
     // Copy output to input
     cutilSafeCall( cudaMemcpy((float *) d_input, d_output, numSamples * survey -> nchans * sizeof(float), 
-                              cudaMemcpyDeviceToDevice) );
-                              
+                              cudaMemcpyDeviceToDevice) );           
     // Destroy plan                              
     cufftDestroy(plan);
 }
@@ -262,7 +261,7 @@ void transpose(float *d_input, float *d_output, THREAD_PARAMS* params,
     float timestamp;
     unsigned chansPerSubband = survey -> nchans / survey -> nsubs,
              numSamples = (survey -> nsamp + survey -> maxshift) * chansPerSubband;
-															   
+												   
     // -------------------------------- Separate Polarisations ---------------------------------
     cudaEventRecord(event_start, 0);
     seperateXYPolarisations<<<dim3(numSamples/survey -> nsubs, 1), survey -> nsubs >>>
@@ -334,11 +333,17 @@ void* dedisperse(void* thread_params)
 
             // Read input data into GPU memory
             cudaEventRecord(event_start, 0);
-    
+            cudaMemset(d_input, 0, params -> inputsize);
+            // If performing channelisation, input data will contain npols polarisations with complex 32-bit values
+            if (survey -> performTranspose) {
+                cutilSafeCall( cudaMemcpy(d_input, params -> input, survey -> npols * sizeof(float) *
+                                         (nsamp + maxshift) * nchans, cudaMemcpyHostToDevice) );  
+            }
             // If performing channelisation, input data will contain npols polarisations with complex 64-bit values
-            if (survey -> performChannelisation)
+            else if (survey -> performChannelisation)
                 cutilSafeCall( cudaMemcpy(d_input, params -> input, survey -> npols * sizeof(cufftComplex) *
                                          (nsamp + maxshift) * nchans, cudaMemcpyHostToDevice) );
+            // Dedispersing data only
             else
                 cutilSafeCall( cudaMemcpy(d_input, params -> input, (nsamp + maxshift) * nchans * sizeof(float), 
                                           cudaMemcpyHostToDevice) );
@@ -347,9 +352,6 @@ void* dedisperse(void* thread_params)
             cudaEventSynchronize(event_stop);
             cudaEventElapsedTime(&timestamp, event_start, event_stop);
             printf("%d: Copied data to GPU %d: %f\n", (int) (time(NULL) - start), tid, timestamp);
-
-            // Clear GPU output buffer
-            cutilSafeCall( cudaMemset(d_output, 0, params -> outputsize));
         }
 
         // Wait input barrier
@@ -390,6 +392,7 @@ void* dedisperse(void* thread_params)
             cudaEventRecord(event_stop, 0);
             cudaEventSynchronize(event_stop);
             cudaEventElapsedTime(&timestamp, event_start, event_stop);
+            cudaMemset(d_output, 0, params -> outputsize);
         }
 
         // Acquire rw lock

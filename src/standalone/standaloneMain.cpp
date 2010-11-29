@@ -10,9 +10,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define SQR(x) (x*x)
+
 // Global arguments
-unsigned sampPerPacket = 1, subsPerPacket = 512, 
-         sampSize = 16, port = 10000, nPols = 2, sampPerSecond = 97656;
+unsigned sampPerPacket = 1, subsPerPacket = 256, 
+         sampSize = 16, port = 10000, nPols = 2, sampPerSecond = 78125;
+
+bool writeToDisk = false;
 
 // Process command-line parameters
 void process_arguments(int argc, char *argv[])
@@ -40,6 +44,8 @@ void process_arguments(int argc, char *argv[])
            nPols = atoi(argv[++i]);
        else if (!strcmp(argv[i], "-sampPerSecond"))
            sampPerSecond = atoi(argv[++i]);
+       else if (!strcmp(argv[i], "-dumpData"))
+           writeToDisk = true;
        i++;
     }
 }
@@ -47,11 +53,13 @@ void process_arguments(int argc, char *argv[])
 // Main method
 int main(int argc, char *argv[])
 {
-    unsigned  chansPerSubband, samples, shift, memSize;
+    int       chansPerSubband, samples, shift, memSize;
+    double    timestamp, sampRate;
     float     *inputBuffer;
     SURVEY    *survey;
+    FILE      *fp = NULL;
     
-     // Create mait QCoreApplication instance
+    // Create mait QCoreApplication instance
     QCoreApplication app(argc, argv);
 
     // Process arguments
@@ -64,15 +72,27 @@ int main(int argc, char *argv[])
     samples = survey -> nsamp * chansPerSubband;
     shift = survey -> maxshift * chansPerSubband;
     memSize = survey -> npols * survey -> nsubs * sizeof(float);
+
+    if ((samples - shift) < 0) {
+        printf("Maxshift (%d) must be smaller than nsamp (%d)!!\n", 
+                survey -> maxshift, survey -> nsamp);
+        exit(-1);
+    }
+
+    // If writing to disk, initialise file
+    if (writeToDisk) {
+        fp = fopen("diskDump.dat", "wb");
+     //   fprintf(fp, "HEADER_END");
+    }
     
     // Initialise Circular Buffer
-    DoubleBuffer doubleBuffer(survey -> nsamp * chansPerSubband, survey -> nsubs, nPols);
+    DoubleBuffer doubleBuffer(samples, survey -> nsubs, nPols);
     
     // Initialise UDP Chunker. Data is now being read
     UDPChunker chunker(port, sampPerPacket, subsPerPacket, nPols, sampPerSecond, sampSize);
     
     // Temporary store for maxshift
-    float *maxshift = (float *) malloc(shift * survey -> nsubs * survey -> npols * sizeof(float) * 2);
+    float *maxshift = (float *) malloc(shift * memSize);
     
     chunker.setDoubleBuffer(&doubleBuffer);
     chunker.start();
@@ -80,25 +100,26 @@ int main(int argc, char *argv[])
     
     // ======================== Store first maxshift =======================
     // Get pointer to next buffer
-    float *udpBuffer = doubleBuffer.prepareRead();
+    float *udpBuffer = doubleBuffer.prepareRead(&timestamp, &sampRate);
        
     // Copy first maxshift to temporary
-    memcpy(maxshift, udpBuffer + (samples - shift) * nPols * survey -> nsubs, 
-                     shift * survey -> nsubs * survey -> npols * sizeof(float));
+    memcpy(maxshift, udpBuffer + (samples - shift) * nPols * survey -> nsubs, shift * memSize);
+                     
+    doubleBuffer.readReady();
     // =====================================================================
 
     // Start main processing loop
     while(true) {
         
         // Get pointer to next buffer
-        float *udpBuffer = doubleBuffer.prepareRead();
-        
+        float *udpBuffer = doubleBuffer.prepareRead(&timestamp, &sampRate);
+
         // Copy maxshift to buffer
         memcpy(inputBuffer, maxshift, shift * memSize);
         
         // Copy UDP data to buffer
-        memcpy(inputBuffer + shift * survey -> nsubs * survey -> npols, udpBuffer, samples * memSize);
-               
+        memcpy(inputBuffer + shift * survey -> npols * survey -> nsubs, udpBuffer, samples * memSize);
+
         // Copy new maxshift
 	    memcpy(maxshift, udpBuffer + (samples - shift) * nPols * survey -> nsubs, shift * memSize);
 	                
@@ -106,10 +127,35 @@ int main(int argc, char *argv[])
         
         // Call MDSM for dedispersion
         unsigned int samplesProcessed;
-	    next_chunk(shift + samples, samplesProcessed);
+        timestamp -= (survey -> maxshift * chansPerSubband) * sampRate;
+	    next_chunk(samples, samplesProcessed, timestamp, sampRate);
 	    if (!start_processing(survey -> nsamp + survey -> maxshift)) {
 	        printf("MDSM stopped....\n");
 	    }
+
+        // Write to disk if required
+        if (writeToDisk) {
+            short *writeBuffer = reinterpret_cast<short*>(udpBuffer);
+            short *data        = reinterpret_cast<short*>(inputBuffer);
+
+            // Calculate intensities
+            for (int i = 0; i < samples; i++)
+                for (unsigned j = 0; j < subsPerPacket; j++) {
+                    short XvalRe = writeBuffer[i*subsPerPacket*4 + j*2];
+                    short XvalIm = writeBuffer[i*subsPerPacket*4 + j*2 + 1];
+                    short YvalRe = writeBuffer[i*subsPerPacket*4 + subsPerPacket*2];
+                    short YvalIm = writeBuffer[i*subsPerPacket*4 + subsPerPacket*2 + 1];
+                    data[i * subsPerPacket + j] = (SQR(XvalRe) + SQR(XvalIm) + SQR(YvalRe) + SQR(YvalIm));
+                }
+
+            // Write to disk
+            fwrite(data, sizeof(short), samples * subsPerPacket, fp);
+            fflush(fp);
+            printf("Dumped data to disk... \n");
+        }
     } 
 
+    if (writeToDisk) {
+        fclose(fp);
+    }
 }
