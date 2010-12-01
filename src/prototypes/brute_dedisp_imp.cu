@@ -107,7 +107,7 @@ int main(int argc, char *argv[])
          }
 
     // Initialise CUDA stuff
-    cutilSafeCall( cudaSetDevice(1));
+    cutilSafeCall( cudaSetDevice(0));
     cudaEvent_t event_start, event_stop;
     float timestamp, kernelTime;
 

@@ -115,7 +115,7 @@ void UDPChunker::run()
             lostPackets = (diff / _samplesPerPacket) - 1;  
 
         if (lostPackets > 0)
-            printf("========================== Generated %u empty packets ==========================\n", lostPackets);
+            printf("==================== Generated %u empty packets =====================\n", lostPackets);
 
         // Generate lostPackets empty packets, if any
         unsigned packetCounter = 0;
@@ -126,7 +126,7 @@ void UDPChunker::run()
             prevBlockid = (prevBlockid + _samplesPerPacket) % totBlocks;
             emptyPacket.header.timestamp = prevSeqid;
             emptyPacket.header.blockSequenceNumber = prevBlockid;
-//            writePacket(emptyPacket);
+            writePacket(emptyPacket);
         }
 
         counter += packetCounter;
@@ -139,8 +139,8 @@ void UDPChunker::run()
     
         counter ++;
         
-       // if (counter % 100000 == 0)
-       //     printf("======================Received 100000 packets===================\n");
+//        if (counter % 1000000 == 0)
+//            printf("====================== Received 1000000 packets ====================\n");
     }
 }
 

@@ -13,7 +13,7 @@
 #define SQR(x) (x*x)
 
 // Global arguments
-unsigned sampPerPacket = 1, subsPerPacket = 256, 
+unsigned sampPerPacket = 1, subsPerPacket = 512, 
          sampSize = 16, port = 10000, nPols = 2, sampPerSecond = 78125;
 
 bool writeToDisk = false;
@@ -128,7 +128,7 @@ int main(int argc, char *argv[])
         // Call MDSM for dedispersion
         unsigned int samplesProcessed;
         timestamp -= (survey -> maxshift * chansPerSubband) * sampRate;
-	    next_chunk(samples, samplesProcessed, timestamp, sampRate);
+	    next_chunk(survey -> nsamp, samplesProcessed, timestamp, sampRate);
 	    if (!start_processing(survey -> nsamp + survey -> maxshift)) {
 	        printf("MDSM stopped....\n");
 	    }

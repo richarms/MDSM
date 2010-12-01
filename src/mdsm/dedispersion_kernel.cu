@@ -104,7 +104,8 @@ __global__ void dedisperse_subband(float *outbuff, float *buff, int nsamp, int n
             }
 
             // Store values in global memory
-            outbuff[outshift + blockIdx.y * nsamp * nsubs + soffset * nsubs + sband] = localvalue[threadIdx.x * nsubs + sband];
+            outbuff[outshift + blockIdx.y * nsamp * nsubs + soffset * nsubs + sband] = 
+                    localvalue[threadIdx.x * nsubs + sband];
         }
     }
 }
@@ -233,28 +234,31 @@ __global__ void inplace_memory_reorganisation(float *input, int nsamp, int nchan
 __global__ void calculate_intensities(cufftComplex *inbuff, float *outbuff, int nsamp, 
                                       int nsubs, int nchans, int npols)
 {
-    unsigned s, c, p;
-    
-    for(s = threadIdx.x + blockIdx.x * blockDim.x;
-        s < nsamp;
-        s += blockDim.x * gridDim.x)
+    /// Loop over all samples
+    for(unsigned s = threadIdx.x + blockIdx.x * blockDim.x;
+                 s < nsamp;
+                 s += blockDim.x * gridDim.x)
     {
-        // Loop over all channels
-        for(c = 0; c < nsubs; c++) {
+        // Loop over all subbands
+        for(unsigned c = 0; c < nsubs; c++) {
+
+            // Loop over all channels
+            for(unsigned chan  = 0; chan < nchans; chan++) {
               
-            float intensity = 0;
-            cufftComplex tempval;
-                
-            // Loop over polarisations
-            for(p = 0; p < npols; p++) {
+                float intensity = 0;
+                cufftComplex tempval;
+                    
+                // Loop over polarisations
+                for(unsigned p = 0; p < npols; p++) {
 
-                // Square real and imaginary parts
-                tempval = inbuff[p * nsubs * nsamp + c * nsamp + s] ;
-                intensity += tempval.x * tempval.x + tempval.y * tempval.y;
+                    // Square real and imaginary parts
+                    tempval = inbuff[c*nchans*nsamp + s*nchans + chan];
+                    intensity += tempval.x * tempval.x + tempval.y * tempval.y;
+                }
+
+                // Store in output buffer (relocate channels)
+                 outbuff[(nsubs*nchans-1 - (c * nchans + chan)) * nsamp + s] = intensity;
             }
-
-            // Store in output buffer (relocate channels)
-            outbuff[(c * nchans + s % nchans) * (nsamp / nchans) + s / nchans ] = intensity;
         }
     }
 }
@@ -279,7 +283,7 @@ __global__ void seperateXYPolarisations(float *input, float *output, int nsamp,
 }
 
 // Expand polarisations from 16-bit complex to 32-bit complex
-__global__ void expandValues(int *input, float *output, int nvalues)
+__global__ void expandValues(short *input, float *output, int nvalues)
 {
     // Assign each thread block to one value
     for(int s = threadIdx.x + blockIdx.x * blockDim.x; 
@@ -287,9 +291,8 @@ __global__ void expandValues(int *input, float *output, int nvalues)
             s += gridDim.x * blockDim.x)  {
                  
         // Load polarisations and save in output (REAL AND IMAGINARY ARE INVERTED!!)
-        int val = input[s];
-        output[s * 2]     = (float) ((val >> 16) & 65535);
-        output[s * 2 + 1] = (float) (   val     & 65535 );
+          output[s * 2]     = (float) input[s * 2 + 1];
+          output[s * 2 + 1] = (float) input[s * 2];
     }
 }
 

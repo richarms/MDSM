@@ -2,6 +2,8 @@
 #include "dedispersion_thread.h"
 #include "math.h"
 
+FILE *fp = NULL;
+
 DEVICES* initialise_devices(SURVEY* survey)
 {
 	int num_devices;
@@ -201,7 +203,7 @@ void brute_force_dedispersion(float *d_input, float *d_output, THREAD_PARAMS* pa
     float startdm = survey -> lowdm + survey -> dmstep * survey -> tdms / survey -> num_threads * params -> thread_num;
   
     // Optimised kernel
-    opt_dedisperse_loop<<< dim3(survey -> nsamp / 128, survey -> tdms / survey -> num_threads), 128 >>>
+    opt_dedisperse_loop<<< dim3(survey -> nsamp / 128, survey -> tdms / survey -> num_threads), 128, 128 >>>
 			(d_output, d_input, survey -> nsamp, survey -> nchans,
 			 survey -> tsamp, 1, startdm, survey -> dmstep, maxshift, 0, 0);
 
@@ -233,12 +235,12 @@ void channelise(cufftComplex *d_input, float *d_output, THREAD_PARAMS* params,
 	cudaEventElapsedTime(&timestamp, event_start, event_stop);
 	printf("%d: Performed Channelisation in %d: %lf\n", (int) (time(NULL) - params -> start),
 														       params -> thread_num, timestamp);
-														       
+
     // ------------------------------------- Calculate intensities on GPU --------------------------------------
                                 
     // Calculate intensity and perform transpose in memory
     cudaEventRecord(event_start, 0);
-    calculate_intensities<<<dim3(numSamples / 128, 1), 128>>>(d_input, d_output, numSamples * chansPerSubband, 
+    calculate_intensities<<<dim3(numSamples / 128, 1), 128>>>(d_input, d_output, numSamples, 
                                                               survey -> nsubs, chansPerSubband, survey -> npols);
     cudaEventRecord(event_stop, 0);
     cudaEventSynchronize(event_stop);
@@ -247,7 +249,27 @@ void channelise(cufftComplex *d_input, float *d_output, THREAD_PARAMS* params,
 														    params -> thread_num, timestamp);
     // Copy output to input
     cutilSafeCall( cudaMemcpy((float *) d_input, d_output, numSamples * survey -> nchans * sizeof(float), 
-                              cudaMemcpyDeviceToDevice) );           
+                              cudaMemcpyDeviceToDevice) );  
+
+    // Temporary dump of channelised data
+    if (0) {
+        cudaEventRecord(event_start, 0);
+        transposeDiagonal<<<dim3(numSamples/TILE_DIM, survey -> nsubs * chansPerSubband / TILE_DIM), 
+                            dim3(TILE_DIM, BLOCK_ROWS) >>>
+                            ((float *) d_input, d_output, numSamples, survey -> nsubs * chansPerSubband);
+        cudaEventRecord(event_stop, 0);
+        cudaEventSynchronize(event_stop);
+        cudaEventElapsedTime(&timestamp, event_start, event_stop);
+        printf("%d: Performed transpose in: %lfms\n", (int) (time(NULL) - params -> start), timestamp);
+
+        // Copy data back to input buffer =
+        cudaMemcpy(d_input, d_output, numSamples * survey -> nchans * sizeof(float), cudaMemcpyDeviceToDevice);
+
+        cudaMemcpy(params -> output, d_output, numSamples * survey -> nchans * sizeof(float), cudaMemcpyDeviceToHost);
+        fwrite(params -> output, sizeof(float), numSamples * survey -> nchans, fp);
+        printf("Dumped channelised data to disk...\n");
+    }       
+
     // Destroy plan                              
     cufftDestroy(plan);
 }
@@ -291,8 +313,8 @@ void transpose(float *d_input, float *d_output, THREAD_PARAMS* params,
 
     // -------------------------------- Extract Polarisations ---------------------------------
     cudaEventRecord(event_start, 0);
-    expandValues<<<dim3(1024, 1), survey -> nsubs >>>
-                       ((int *) d_output, d_input, numSamples * survey -> nsubs * survey -> npols);
+    expandValues<<<dim3(2048, 1), survey -> nsubs >>>
+                       ((short *) d_output, d_input, numSamples * survey -> nsubs * survey -> npols);
     cudaEventRecord(event_stop, 0);
     cudaEventSynchronize(event_stop);
     cudaEventElapsedTime(&timestamp, event_start, event_stop);
@@ -318,6 +340,9 @@ void* dedisperse(void* thread_params)
     cutilSafeCall( cudaMalloc((void **) &d_input, params -> inputsize));
     cutilSafeCall( cudaMalloc((void **) &d_output, params -> outputsize));
     cutilSafeCall( cudaMemcpyToSymbol(dm_shifts, params -> dmshifts, nchans * sizeof(nchans)) );
+
+    // Temporary output file
+    fp = fopen("channelisedOutput.dat", "wb");
 
     // Initialise events / performance timers
     cudaEvent_t event_start, event_stop;
