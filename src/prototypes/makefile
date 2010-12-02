@@ -48,6 +48,10 @@ clipper:
 	$(NVCC) -o clipper rfi_clipper.cu $(LDFLAGS) $(INC) -L/lib -lcufft
 	rm -f *.cu.o *.linkinfo
 
+folding:
+	$(NVCC) -o folding folding.cu $(LDFLAGS) $(INC) -L/lib -lcufft
+	rm -f *.cu.o *.linkinfo
+
 brute_dedisp:
 	$(NVCC) -o brute_dedisp brute_dedisp.cu --ptxas-options=-v $(LDFLAGS) $(INC) -L/lib
 	rm -f *.cu.o *.linkinfo

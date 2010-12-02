@@ -257,7 +257,7 @@ __global__ void calculate_intensities(cufftComplex *inbuff, float *outbuff, int 
                 }
 
                 // Store in output buffer (relocate channels)
-                 outbuff[(nsubs*nchans-1 - (c * nchans + chan)) * nsamp + s] = intensity;
+                 outbuff[(nchans*nsubs-1 - (c * nchans + chan)) * nsamp + s] = intensity * 0.1;
             }
         }
     }
@@ -328,6 +328,23 @@ __global__ void transposeDiagonal(float *idata, float *odata, int width, int hei
 
     for (int i = 0; i < TILE_DIM; i += BLOCK_ROWS)
       odata[index_out + i * height] = tile[threadIdx.x][threadIdx.y + i];
+}
+
+// ---------------------- Folding kernel  ------------------------------
+__global__ void fold(float *input, float *output, int nsamp, float tsamp,
+                    float period)
+{
+    int bins = period / tsamp;
+
+    for(unsigned b = threadIdx.x;
+                 b < bins;
+                 b += blockDim.x)
+    {
+        float val = 0;
+        for(unsigned s = 0; s < nsamp / bins; s ++)
+            val += input[blockIdx.x * nsamp + s * bins + b];
+         output[blockIdx.x * bins + b] = val;
+    }
 }
 
 #endif

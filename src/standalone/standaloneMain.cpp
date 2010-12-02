@@ -13,7 +13,7 @@
 #define SQR(x) (x*x)
 
 // Global arguments
-unsigned sampPerPacket = 1, subsPerPacket = 512, 
+unsigned sampPerPacket = 1, subsPerPacket = 256, 
          sampSize = 16, port = 10000, nPols = 2, sampPerSecond = 78125;
 
 bool writeToDisk = false;
@@ -82,7 +82,6 @@ int main(int argc, char *argv[])
     // If writing to disk, initialise file
     if (writeToDisk) {
         fp = fopen("diskDump.dat", "wb");
-     //   fprintf(fp, "HEADER_END");
     }
     
     // Initialise Circular Buffer

@@ -42,9 +42,12 @@ typedef struct {
     unsigned num_threads;
     unsigned *gpu_ids;
     unsigned num_gpus;
+
+    // Folding parameters
+    double period;
     
     // Actions performed on the GPU
-    bool performChannelisation, performTranspose;
+    bool performChannelisation, performTranspose, performFolding;
 
 } SURVEY;
 

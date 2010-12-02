@@ -2,7 +2,7 @@
 #include "dedispersion_thread.h"
 #include "math.h"
 
-FILE *fp = NULL;
+FILE *fp = NULL, *foldedFile = NULL;
 
 DEVICES* initialise_devices(SURVEY* survey)
 {
@@ -262,12 +262,10 @@ void channelise(cufftComplex *d_input, float *d_output, THREAD_PARAMS* params,
         cudaEventElapsedTime(&timestamp, event_start, event_stop);
         printf("%d: Performed transpose in: %lfms\n", (int) (time(NULL) - params -> start), timestamp);
 
-        // Copy data back to input buffer =
-        cudaMemcpy(d_input, d_output, numSamples * survey -> nchans * sizeof(float), cudaMemcpyDeviceToDevice);
-
         cudaMemcpy(params -> output, d_output, numSamples * survey -> nchans * sizeof(float), cudaMemcpyDeviceToHost);
         fwrite(params -> output, sizeof(float), numSamples * survey -> nchans, fp);
         printf("Dumped channelised data to disk...\n");
+        exit(-1);
     }       
 
     // Destroy plan                              
@@ -321,6 +319,33 @@ void transpose(float *d_input, float *d_output, THREAD_PARAMS* params,
     printf("%d: Expanded polarisations in: %lfms\n", (int) (time(NULL) - params -> start), timestamp); 
 }
 
+// Fold data
+void fold(float *d_input, float *d_output, THREAD_PARAMS* params, 
+          cudaEvent_t event_start, cudaEvent_t event_stop)
+{
+	// Define function variables;
+    SURVEY *survey = params -> survey;
+    int bins = survey -> period / survey -> tsamp;
+    float timestamp;
+
+    // ------------------------------------- Perform dedispersion on GPU --------------------------------------
+    cudaEventRecord(event_start, 0);
+  
+    // Optimised kernel
+    fold<<<dim3(survey -> tdms, 1), 512 >>>(d_output, d_input, survey -> nsamp, survey -> tsamp, survey -> period);
+    cudaEventRecord(event_stop, 0);
+	cudaEventSynchronize(event_stop);
+	cudaEventElapsedTime(&timestamp, event_start, event_stop);
+	printf("%d: Folded data in %d: %lf\n", (int) (time(NULL) - params -> start),
+															   params -> thread_num, timestamp);
+
+    // Print folded output to file
+    cutilSafeCall(cudaMemcpy(params -> input, d_input, survey -> tdms * bins * sizeof(float),
+                 cudaMemcpyDeviceToHost));
+    fwrite(params -> input, sizeof(float), survey -> tdms * bins, foldedFile);
+    exit(-1);
+}
+
 // Dedispersion algorithm
 void* dedisperse(void* thread_params)
 {
@@ -343,6 +368,7 @@ void* dedisperse(void* thread_params)
 
     // Temporary output file
     fp = fopen("channelisedOutput.dat", "wb");
+    foldedFile = fopen("foldedOutput.dat", "wb");
 
     // Initialise events / performance timers
     cudaEvent_t event_start, event_stop;
@@ -397,9 +423,13 @@ void* dedisperse(void* thread_params)
                 
             // Perform subbands dedispersion or brute force dedispersion    
         	if (survey -> useBruteForce)
-        		brute_force_dedispersion(d_input,d_output, params, event_start, event_stop, maxshift);
+        		brute_force_dedispersion(d_input, d_output, params, event_start, event_stop, maxshift);
         	else
         		subband_dedispersion(d_input, d_output, params, event_start, event_stop);
+
+            // Perform folding
+            if (survey -> performFolding)
+        		fold(d_input, d_output, params, event_start, event_stop);
         }
 
         // Wait output barrier

@@ -97,6 +97,7 @@ SURVEY* processSurveyParameters(QString filepath)
     survey -> single_file_mode = 0;
     survey -> performChannelisation = false;
     survey -> performTranspose = false;
+    survey -> performFolding = false;
 
     // Start parsing observation file and generate survey parameters
     n = root.firstChild();
@@ -141,6 +142,10 @@ SURVEY* processSurveyParameters(QString filepath)
                     survey -> performChannelisation = true;
                 if (e.attribute("transpose", "0").toUInt())
                     survey -> performTranspose = true;
+                if (e.attribute("fold", "0").toUInt()) {
+                    survey -> performFolding = true;
+                    survey -> period = e.attribute("period", "1").toFloat();
+                }
             }
         
             // Check if user has specified GPUs to use
@@ -282,11 +287,13 @@ int calculate_nsamp(int maxshift, size_t *inputsize, size_t* outputsize, unsigne
 	    unsigned long int tempOutput = memory * 1024 * 0.99 / 3;
 
 	    // Check if proposed nsamp will fit in memory
-	    if (tempInput < *inputsize || tempOutput < *outputsize ||
-	        (nsamp + survey -> maxshift) * survey -> nchans * survey -> npols * 8 > tempInput) {
-	        fprintf(stderr, "Too many samples or DMs, set different parameters. This requires %.2lf GB of memory (have %.2lf GB)\n", (float)( (nsamp + survey -> maxshift) * survey -> nchans * survey -> npols * 8.0) / (float) (1024 * 1024 * 1024), tempInput / (float) (1024*1024*1024));
-	        exit(-1);
-	    }
+//	    if (//tempInput < *inputsize || tempOutput < *outputsize ||
+//	        ((nsamp + survey -> maxshift) * survey -> nchans * survey -> npols * 8) > tempInput) {
+	        fprintf(stderr, "This requires %.2lf GB of memory (have %.2lf GB)\n", 
+                             (float)( (nsamp + survey -> maxshift) * survey -> nchans * survey -> npols * 8.0) /
+                             (float) (1024 * 1024 * 1024), tempInput / (float) (1024*1024*1024));
+//	        exit(-1);
+//	    }
 	    *inputsize = tempInput;
 	    *outputsize = tempOutput;
 	    
@@ -346,7 +353,7 @@ float* initialiseMDSM(SURVEY* input_survey)
     // Calculate output dedispersion size
     size_t outsize = 0;
     if (survey -> useBruteForce)
-    	outsize = *outputsize / sizeof(float);
+    	outsize = survey -> nsamp * survey -> tdms;
     else {
 		for(i = 0; i < survey -> num_passes; i++)
 			outsize += (survey -> pass_parameters[i].ncalls / num_devices) * survey -> pass_parameters[i].calldms
@@ -357,10 +364,14 @@ float* initialiseMDSM(SURVEY* input_survey)
     // Initialise buffers and create output buffer (a separate buffer for each GPU output)
     input_buffer = (float *) malloc(*inputsize);
     output_buffer = (float *) malloc(num_devices * outsize * sizeof(float));
+
     // Log parameters
     printf("nchans: %d, nsamp: %d, nsubs: %d, npols: %d, tsamp: %f, foff: %f, fch1: %f\n", survey -> nchans, 
            survey -> nsamp, survey -> nsubs, survey -> npols, survey -> tsamp, survey -> foff, survey -> fch1);
     printf("ndms: %d, max dm: %f, maxshift: %d\n", survey -> tdms, hiDM, maxshift);
+
+    if (survey -> performFolding)
+        printf("Folding. period: %f, bins: %d\n", survey -> period, (int) (survey -> period / survey -> tsamp));
 
     if (pthread_barrier_init(&input_barrier, NULL, num_devices + 2))
         { fprintf(stderr, "Unable to i nitialise input barrier\n"); exit(0); }
