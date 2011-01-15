@@ -22,7 +22,7 @@ typedef struct {
 typedef struct {
 	// Overall specs
 	int num_devices;
-	unsigned long int minTotalGlobalMem; // When assuming homogeneous devics
+	unsigned long int minTotalGlobalMem; // When assuming homogeneous devices
 
 	DEVICE_INFO* devices;
 
@@ -38,6 +38,7 @@ typedef struct {
 
     // Input and output buffers memory pointers & sizes
     size_t inputsize, outputsize, dm_output, dedispersed_size;
+    float *folded_output;
     float* output;
     float* input; 
    

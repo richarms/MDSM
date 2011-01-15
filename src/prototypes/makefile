@@ -9,7 +9,7 @@ CC = $(CCC) $(DFITS) $(DFFTW) -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
 
 NVCC 		:= nvcc
 CUDA_PATH     	:= /usr/local/cuda
-CUDA_SDK_PATH 	:= /home/harsha/NVIDIA_GPU_Computing_SDK/C
+CUDA_SDK_PATH 	:= /usr/local/cudaSDK/C
 INC		:= -I. -I${CUDA_SDK_PATH}/common/inc -I${CUDA_PATH}/include
 LDFLAGS 	:= -L${CUDA_PATH}/lib -L${CUDA_PATH}/lib64 -L${CUDA_SDK_PATH}/lib \
 	          -L${CUDA_SDK_PATH}/common/lib -L/lib \
@@ -50,6 +50,10 @@ clipper:
 
 folding:
 	$(NVCC) -o folding folding.cu $(LDFLAGS) $(INC) -L/lib -lcufft
+	rm -f *.cu.o *.linkinfo
+
+sfolding:
+	$(NVCC) -o sfolding standalone_folding.cu $(LDFLAGS) $(INC) -L/lib -lcufft
 	rm -f *.cu.o *.linkinfo
 
 brute_dedisp:

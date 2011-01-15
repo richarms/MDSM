@@ -332,7 +332,7 @@ __global__ void transposeDiagonal(float *idata, float *odata, int width, int hei
 
 // ---------------------- Folding kernel  ------------------------------
 __global__ void fold(float *input, float *output, int nsamp, float tsamp,
-                    float period)
+                    float period, int shift)
 {
     int bins = period / tsamp;
 
@@ -342,8 +342,69 @@ __global__ void fold(float *input, float *output, int nsamp, float tsamp,
     {
         float val = 0;
         for(unsigned s = 0; s < nsamp / bins; s ++)
-            val += input[blockIdx.x * nsamp + s * bins + b];
-         output[blockIdx.x * bins + b] = val;
+            val += input[blockIdx.x * (nsamp + shift) + shift + s * bins + b];
+         output[blockIdx.x * bins + b] = val / (nsamp / bins);
+    }
+}
+
+// ---------------------- RFI Clipping kernel --------------------------
+// One thread block per original subband (nsamp = nsamp * chansPerSubband)
+__global__ __device__ void rfi_clipping(float *input, float *means, int nsamp, int nsubs)
+{
+    extern __shared__ float2 tempSums[];
+    float mean, stddev;   // Store as registers to avoid bank conflicts in shared memory
+
+    // Initial setup
+    tempSums[threadIdx.x].x = 0;
+    tempSums[threadIdx.x].y = 0;
+
+    for(unsigned s =  threadIdx.x; 
+                 s <  nsamp; 
+                 s += blockDim.x)
+    {
+        // Calculate partial sums
+        float intensity = input[blockIdx.x * nsamp + s];
+        tempSums[threadIdx.x].x += intensity;
+        tempSums[threadIdx.x].y += intensity * intensity;
+    }
+
+    // synchronise threads
+    __syncthreads();
+
+    // TODO: use reduction to optimise this part
+    if (threadIdx.x == 0) {
+        for(unsigned i = 1; i < blockDim.x; i++) {
+            tempSums[0].x += tempSums[i].x;
+            tempSums[0].y += tempSums[i].y;
+        }
+
+        // Calculate mean and stddev
+        mean   = tempSums[0].x / nsamp;
+        stddev = sqrtf((tempSums[0].y - nsamp * mean * mean) / nsamp);
+        means[blockIdx.x] = mean;
+
+        // Store mean and stddev in tempSums
+        tempSums[0].x = mean;
+        tempSums[0].y = stddev;
+    }
+
+    // Synchronise threads
+    __syncthreads();  
+    mean = tempSums[0].x;
+    stddev = tempSums[0].y;
+
+    // Clip RFI within the subbands
+    for(unsigned s =  threadIdx.x; 
+                 s <  nsamp;    
+                 s += blockDim.x)
+    {
+        float val = input[blockIdx.x * nsamp + s];
+        float tempval = fabs(val - mean);
+        if (tempval >= stddev * 4 || tempval <= stddev / 4 || tempval == 0)
+            val = mean;
+
+        __syncthreads();
+        input[blockIdx.x * nsamp + s] = val;
     }
 }
 

@@ -124,8 +124,8 @@ void UDPChunker::run()
             // Generate empty packet with correct seqid and blockid
             prevSeqid = (prevBlockid + _samplesPerPacket < totBlocks) ? prevSeqid : prevSeqid + 1;
             prevBlockid = (prevBlockid + _samplesPerPacket) % totBlocks;
-            emptyPacket.header.timestamp = prevSeqid;
-            emptyPacket.header.blockSequenceNumber = prevBlockid;
+//            emptyPacket.header.timestamp = prevSeqid;
+//            emptyPacket.header.blockSequenceNumber = prevBlockid;
             writePacket(emptyPacket);
         }
 

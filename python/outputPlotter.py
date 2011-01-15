@@ -82,15 +82,6 @@ if __name__ == "__main__":
 
             plt.show()
 
-#        elif argv[3] == '3d' or argv[3] == '3D':
-#            fig = plt.figure()
-#            ax = Axes3D(fig)
-#            ax.scatter(np.array(data[0]), np.array(data[1]), np.array(data[2]),'ro')
-#            ax.set_xlabel('Time')
-#            ax.set_ylabel('DM')
-#            ax.set_zlabel('Intensity')
-#            plt.show()
-
         else:
             print "Invalid x/y values"
             exit()

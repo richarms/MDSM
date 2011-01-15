@@ -47,7 +47,7 @@ typedef struct {
     double period;
     
     // Actions performed on the GPU
-    bool performChannelisation, performTranspose, performFolding;
+    bool performChannelisation, performTranspose, performFolding, performClipping;
 
 } SURVEY;
 

@@ -1,3 +1,4 @@
+#include "dedispersion_periodicity_output.h"
 #include "dedispersion_output.h"
 #include "dedispersion_thread.h"
 #include "unistd.h"
@@ -20,17 +21,17 @@ SURVEY *survey;
 unsigned i, ndms, maxshift;
 time_t start = time(NULL), begin;
 pthread_attr_t thread_attr;
-pthread_t output_thread;
+pthread_t output_thread, periodicity_thread;
 DEVICES* devices;
 pthread_t* threads;
 THREAD_PARAMS* threads_params;
 float *dmshifts;
 unsigned long *inputsize, *outputsize;
 float* input_buffer;
-float* output_buffer;
+float* output_buffer, *periodicity_buffer;
 pthread_rwlock_t rw_lock = PTHREAD_RWLOCK_INITIALIZER;
 pthread_barrier_t input_barrier, output_barrier;
-OUTPUT_PARAMS output_params;
+OUTPUT_PARAMS output_params, periodicity_params;
 int loop_counter = 0, num_devices, ret;
 bool outSwitch = true;
 unsigned pnsamp, ppnsamp;
@@ -142,6 +143,8 @@ SURVEY* processSurveyParameters(QString filepath)
                     survey -> performChannelisation = true;
                 if (e.attribute("transpose", "0").toUInt())
                     survey -> performTranspose = true;
+                if (e.attribute("clip", "0").toUInt())
+                    survey -> performClipping = true;
                 if (e.attribute("fold", "0").toUInt()) {
                     survey -> performFolding = true;
                     survey -> period = e.attribute("period", "1").toFloat();
@@ -364,6 +367,7 @@ float* initialiseMDSM(SURVEY* input_survey)
     // Initialise buffers and create output buffer (a separate buffer for each GPU output)
     input_buffer = (float *) malloc(*inputsize);
     output_buffer = (float *) malloc(num_devices * outsize * sizeof(float));
+    periodicity_buffer = (float *) malloc(num_devices * outsize * sizeof(float));
 
     // Log parameters
     printf("nchans: %d, nsamp: %d, nsubs: %d, npols: %d, tsamp: %f, foff: %f, fch1: %f\n", survey -> nchans, 
@@ -373,10 +377,10 @@ float* initialiseMDSM(SURVEY* input_survey)
     if (survey -> performFolding)
         printf("Folding. period: %f, bins: %d\n", survey -> period, (int) (survey -> period / survey -> tsamp));
 
-    if (pthread_barrier_init(&input_barrier, NULL, num_devices + 2))
+    if (pthread_barrier_init(&input_barrier, NULL, num_devices + 3))
         { fprintf(stderr, "Unable to i nitialise input barrier\n"); exit(0); }
 
-    if (pthread_barrier_init(&output_barrier, NULL, num_devices + 2))
+    if (pthread_barrier_init(&output_barrier, NULL, num_devices + 3))
         { fprintf (stderr, "Unable to initialise output barrier\n"); exit(0); }
 
     // Create output params and output file
@@ -396,6 +400,25 @@ float* initialiseMDSM(SURVEY* input_survey)
     if (pthread_create(&output_thread, &thread_attr, process_output, (void *) &output_params))
         { fprintf(stderr, "Error occured while creating output thread\n"); exit(0); }
 
+    // Create periodicity output params and output file
+    if (survey -> performFolding) {
+        periodicity_params.nthreads = num_devices;
+        periodicity_params.iterations = 2;
+        periodicity_params.maxiters = 2;
+        periodicity_params.output_buffer = periodicity_buffer;
+        periodicity_params.dedispersed_size = outsize;
+        periodicity_params.stop = 0;
+        periodicity_params.rw_lock = &rw_lock;
+        periodicity_params.input_barrier = &input_barrier;
+        periodicity_params.output_barrier = &output_barrier;
+        periodicity_params.start = start;
+        periodicity_params.survey = survey;
+
+        // Create periodicity thread
+        if (pthread_create(&periodicity_thread, &thread_attr, process_periodicity_output, (void *) &periodicity_params))
+            { fprintf(stderr, "Error occured while creating periodicity thread\n"); exit(0); }
+    }
+
     // Create threads and assign devices
     for(k = 0; k < num_devices; k++) {
 
@@ -407,6 +430,7 @@ float* initialiseMDSM(SURVEY* input_survey)
         threads_params[k].dedispersed_size = outsize;
         threads_params[k].binsize = 1;
         threads_params[k].output = &output_buffer[outsize * k];
+        threads_params[k].folded_output = &periodicity_buffer[outsize * k];
         threads_params[k].input = input_buffer;
         threads_params[k].dmshifts = dmshifts;
         threads_params[k].thread_num = k;
@@ -444,6 +468,7 @@ void tearDownMDSM()
         if (pthread_join(threads[k], &status))
             { fprintf(stderr, "Error while joining threads\n"); exit(0); }
     pthread_join(output_thread, &status);
+    pthread_join(periodicity_thread, &status);
     
     // Destroy attributes and synchronisation objects
     pthread_attr_destroy(&thread_attr);
@@ -456,6 +481,7 @@ void tearDownMDSM()
     free(devices);
 
     free(output_buffer);
+    free(periodicity_buffer);
     free(threads_params);
     free(input_buffer);
     free(dmshifts);
@@ -485,7 +511,9 @@ float *next_chunk(unsigned int data_read, unsigned &samples, double timestamp = 
 
     // Stopping clause (handled internally)
     if (data_read == 0) { 
+        printf("Entered stopping condition...\n");
         output_params.stop = 1;
+        periodicity_params.stop = 1;
         for(k = 0; k < num_devices; k++) 
             threads_params[k].stop = 1;
 

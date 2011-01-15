@@ -20,3 +20,10 @@ target_link_libraries(standaloneMdsm
     mdsm-cuda
     mdsm
 )
+
+add_executable(dataEmulator DataEmulator.cpp)
+target_link_libraries(dataEmulator
+    ${QT_QTCORE_LIBRARY}
+    ${QT_QTNETWORK_LIBRARY}
+    mdsm
+)

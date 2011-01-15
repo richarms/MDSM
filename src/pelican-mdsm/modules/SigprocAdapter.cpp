@@ -27,7 +27,7 @@ void SigprocAdapter::deserialise(QIODevice* in)
     if (_iteration == 0) {
         _fp = fopen( ((QFile *) in) -> fileName().toUtf8().data(),  "rb");
         _header = read_header(_fp);
-        _tsamp = _header -> tsamp;
+        _tsamp = 0.0000128;//_header -> tsamp;
     }
 
     float *dataTemp = (float *) malloc(_nSamples * _nSubbands * _nBits / 8 * sizeof(float));
