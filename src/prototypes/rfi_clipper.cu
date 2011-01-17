@@ -5,9 +5,9 @@
 // ---------------------- Intensities Calculation Loop  ------------------------------
 
 // One thread block per original subband (nsamp = nsamp * chansPerSubband)
-__global__ __device__ void rfi_clipping(float *input, float *means, int nsamp, int nsubs, int nchans)
+__global__ __device__ void rfi_clipping(float *input, float *means, int nsamp, int nsubs)
 {
-    extern __shared__ float2 tempSums[];
+    __shared__ float2 tempSums[1024];
     float mean, stddev;   // Store as registers to avoid bank conflicts in shared memory
 
     // Initial setup
@@ -19,7 +19,7 @@ __global__ __device__ void rfi_clipping(float *input, float *means, int nsamp, i
                  s += blockDim.x)
     {
         // Calculate partial sums
-        float intensity = input[blockIdx.x * nsamp + s];
+        float intensity = input[blockIdx.y * nsamp + s];
         tempSums[threadIdx.x].x += intensity;
         tempSums[threadIdx.x].y += intensity * intensity;
     }
@@ -29,15 +29,17 @@ __global__ __device__ void rfi_clipping(float *input, float *means, int nsamp, i
 
     // TODO: use reduction to optimise this part
     if (threadIdx.x == 0) {
-        for(unsigned i = 1; i < blockDim.x; i++) {
-            tempSums[0].x += tempSums[i].x;
-            tempSums[0].y += tempSums[i].y;
+
+        float val1, val2;
+        for(unsigned i = 0; i < blockDim.x; i++) {
+            val1 += tempSums[i].x;
+            val2 += tempSums[i].y;
         }
 
         // Calculate mean and stddev
-        mean   = tempSums[0].x / nsamp;
-        stddev = sqrtf((tempSums[0].y - nsamp * mean * mean) / nsamp);
-        means[blockIdx.x] = mean;
+        mean   = val1 / nsamp;
+        stddev = sqrtf((val2 - nsamp * mean * mean) / nsamp);
+        means[blockIdx.y] = mean;
 
         // Store mean and stddev in tempSums
         tempSums[0].x = mean;
@@ -54,20 +56,20 @@ __global__ __device__ void rfi_clipping(float *input, float *means, int nsamp, i
                  s <  nsamp;    
                  s += blockDim.x)
     {
-        float val = input[blockIdx.x * nsamp + s];
+        float val = input[blockIdx.y * nsamp + s];
         float tempval = fabs(val - mean);
         if (tempval >= stddev * 4 || tempval <= stddev / 4)
             val = mean;
 
         __syncthreads();
-        input[blockIdx.x * nsamp + s] = val;
+        input[blockIdx.y * nsamp + s] = val;
     }
 }
 
 // ------------------------------------------------------------------------------------
 
-int nchans = 32, nsamp = 32, nsubs = 8;
-int gridsize = 128, blocksize = 512;
+int nsamp = 32, nsubs = 8;
+int blocksize = 512;
 
 // Process command-line parameters
 void process_arguments(int argc, char *argv[])
@@ -78,9 +80,7 @@ void process_arguments(int argc, char *argv[])
         i++;
 
     while(i < argc) {
-       if (!strcmp(argv[i], "-nchans"))
-           nchans = atoi(argv[++i]);
-       else if (!strcmp(argv[i], "-nsamp"))
+       if (!strcmp(argv[i], "-nsamp"))
            nsamp = atoi(argv[++i]);
        else if (!strcmp(argv[i], "-nsubs"))
            nsubs = atoi(argv[++i]);
@@ -99,14 +99,14 @@ int main(int argc, char *argv[])
     cudaEvent_t event_start, event_stop;
 
     // Initialise CUDA stuff
-    cudaSetDevice(2);
+    cudaSetDevice(1);
     cudaEventCreate(&event_start); 
     cudaEventCreate(&event_stop); 
     float timestamp;
     
     float *input, *d_input, *means, *d_means;
     
-    printf("nsamp: %d, nsubs: %d, nchans: %d\n", nsamp, nsubs, nchans);
+    printf("nsamp: %d, nsubs: %d\n", nsamp, nsubs);
 
     // Initialise data 
     input  = (float *) malloc(nsubs * nsamp * sizeof(float));
@@ -116,7 +116,7 @@ int main(int argc, char *argv[])
         for(unsigned j = 0; j < nsamp; j++)
             input[i * nsamp + j] = j;   
 
-    // Allocate and transfer data to GPU (nsamp * nchans)
+    // Allocate and transfer data to GPU (nsamp)
     cudaMalloc((void **) &d_input,  sizeof(float) * nsubs * nsamp);
     cudaMalloc((void **) &d_means,  sizeof(float) * nsubs);
 
@@ -132,8 +132,8 @@ int main(int argc, char *argv[])
 
     // Apply inter-subband clipping
     cudaEventRecord(event_start, 0);
-    rfi_clipping<<<dim3(nsubs, 1), blocksize, blocksize >>>
-                          (d_input, d_means, nsamp, nsubs, nchans);
+    rfi_clipping<<<dim3(1, nsubs), blocksize, blocksize*4 >>>
+                          (d_input, d_means, nsamp, nsubs);
     cudaEventRecord(event_stop, 0);
     cudaEventSynchronize(event_stop);
     cudaEventElapsedTime(&timestamp, event_start, event_stop);
@@ -141,8 +141,10 @@ int main(int argc, char *argv[])
 
     // Copy means to host memory
     cudaMemcpy(means, d_means, sizeof(float) * nsubs, cudaMemcpyDeviceToHost);
-//    for(unsigned i=0; i < nsubs; i++)
-//        printf("%d. %f\n", i, means[i]);
+    for(unsigned i = 0; i < nsubs; i++) {
+        if (means[i] != i)
+            printf("Error: %d = %f\n", i, means[i]);
+    }
 
     // Calculate mean of means
     double meanOfMeans;

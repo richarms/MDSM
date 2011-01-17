@@ -351,7 +351,7 @@ __global__ void fold(float *input, float *output, int nsamp, float tsamp,
 // One thread block per original subband (nsamp = nsamp * chansPerSubband)
 __global__ __device__ void rfi_clipping(float *input, float *means, int nsamp, int nsubs)
 {
-    extern __shared__ float2 tempSums[];
+    __shared__ float2 tempSums[1024];
     float mean, stddev;   // Store as registers to avoid bank conflicts in shared memory
 
     // Initial setup
@@ -373,14 +373,15 @@ __global__ __device__ void rfi_clipping(float *input, float *means, int nsamp, i
 
     // TODO: use reduction to optimise this part
     if (threadIdx.x == 0) {
-        for(unsigned i = 1; i < blockDim.x; i++) {
-            tempSums[0].x += tempSums[i].x;
-            tempSums[0].y += tempSums[i].y;
+        double val1 = 0, val2 = 0;
+        for(unsigned i = 0; i < blockDim.x; i++) {
+            val1 += tempSums[i].x;
+            val2 += tempSums[i].y;
         }
 
         // Calculate mean and stddev
-        mean   = tempSums[0].x / nsamp;
-        stddev = sqrtf((tempSums[0].y - nsamp * mean * mean) / nsamp);
+        mean   = val1 / nsamp;
+        stddev = sqrtf((val2 - nsamp * mean * mean) / nsamp);
         means[blockIdx.x] = mean;
 
         // Store mean and stddev in tempSums
@@ -400,7 +401,7 @@ __global__ __device__ void rfi_clipping(float *input, float *means, int nsamp, i
     {
         float val = input[blockIdx.x * nsamp + s];
         float tempval = fabs(val - mean);
-        if (tempval >= stddev * 4 || tempval <= stddev / 4 || tempval == 0)
+        if (tempval >= stddev * 4 || (tempval - stddev * 4) > 0 || tempval == 0)
             val = mean;
 
         __syncthreads();

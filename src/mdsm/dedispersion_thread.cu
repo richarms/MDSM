@@ -329,7 +329,7 @@ void clip(float *d_input, float *d_means, THREAD_PARAMS* params, cudaEvent_t eve
     float timestamp;
 
     cudaEventRecord(event_start, 0);
-    rfi_clipping<<<dim3(survey -> nsubs, 1), 512, 512 >>>(d_input, d_means, samples, survey -> nsubs);
+    rfi_clipping<<<dim3(survey -> nsubs), 512 >>>(d_input, d_means, samples, survey -> nsubs);
 
     // Copy means to host memory
     cudaMemcpy(means, d_means, sizeof(float) * survey -> nsubs, cudaMemcpyDeviceToHost);
@@ -340,12 +340,12 @@ void clip(float *d_input, float *d_means, THREAD_PARAMS* params, cudaEvent_t eve
         meanOfMeans += means[i];
     meanOfMeans /= (survey -> nsubs * 1.0);
 
-//    // Apply subband excision
-//    for(unsigned i = 0; i < survey -> nsubs; i++)
-//        if (means[i] > 2 * meanOfMeans) {
-//            cudaMemset(d_input + i * samples, meanOfMeans, samples * sizeof(float)); // TODO: need to set this as meanOfMeans...
-//            printf("Performed excision on subband %d\n", i);
-//        }
+    // Apply subband excision
+    for(unsigned i = 0; i < survey -> nsubs; i++)
+        if (means[i] > 2 * meanOfMeans) {
+            cudaMemset(d_input + i * samples, 0, samples * sizeof(float)); // TODO: need to set this as meanOfMeans...
+            printf("Performed excision on subband %d\n", i);
+        }
 
     cudaEventRecord(event_stop, 0);
     cudaEventSynchronize(event_stop);

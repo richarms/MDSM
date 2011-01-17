@@ -115,7 +115,7 @@ void UDPChunker::run()
             lostPackets = (diff / _samplesPerPacket) - 1;  
 
         if (lostPackets > 0)
-            printf("==================== Generated %u empty packets =====================\n", lostPackets);
+            fprintf(stderr, "==================== Generated %u empty packets =====================\n", lostPackets);
 
         // Generate lostPackets empty packets, if any
         unsigned packetCounter = 0;

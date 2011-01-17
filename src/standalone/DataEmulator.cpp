@@ -7,7 +7,7 @@
 
 typedef std::complex<short> i16complex;
 
-unsigned sampPerPacket = 1, subsPerPacket = 512, 
+unsigned sampPerPacket = 1, subsPerPacket = 256, 
          sampSize = 16, port = 10000, nPols = 2, sampPerSecond = 78125;
 
 // -period 20 -width 5 -snrpeak 5 -dm 10 -nbits 16 -nchans 256 -tsamp 12.8 -tobs 300 -fch1 630 -foff 0.09765625
@@ -24,7 +24,6 @@ int main(int argc, char *argv[])
     FILE_HEADER* header;
     FILE* fp = fopen(argv[1], "rb");
     header = read_header(fp);
-   int nbits = 16;
        
     // Connect to host
     QUdpSocket* socket = new QUdpSocket;
@@ -48,7 +47,7 @@ int main(int argc, char *argv[])
     // Send whole file
     do {
         // Read data from file
-        data_read = read_block(fp, nbits, dataBuffer, sampPerPacket * subsPerPacket);
+        data_read = read_block(fp, header -> nbits, dataBuffer, sampPerPacket * subsPerPacket);
  
         // Convert data to packet format
         if (sampSize == 16)
