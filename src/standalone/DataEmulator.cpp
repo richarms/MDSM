@@ -36,11 +36,11 @@ int main(int argc, char *argv[])
 
     // Initialiase packet
     UDPPacket packet;
-    packet.header.version    = (uint8_t) 0xAAAB;
+    packet.header.version    = (char) 0xAAAB;
     packet.header.nrBeamlets = subsPerPacket;
     packet.header.nrBlocks   = sampPerPacket;
-    packet.header.station    = (uint16_t) 0x00EA;
-    packet.header.configuration = (uint8_t) 1010;
+    packet.header.station    = (short) 0x00EA;
+    packet.header.configuration = (char) 1010;
 
     printf("Data Emulator initialised\n");
 
