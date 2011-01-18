@@ -10,8 +10,6 @@
 #include <cstdlib>
 #include <iostream>
 
-float prevStddev = 0;
-
 // Calaculate the mean and standard deviation for the data
 // NOTE: Performed only on output of first thread
 void mean_stddev(float *buffer, SURVEY *survey, int read_nsamp, time_t start_time)
@@ -94,7 +92,7 @@ void process_subband(float *buffer, FILE* output, SURVEY *survey, int read_nsamp
                         fprintf(output, "%lf, %f, %f\n", 
                                 timestamp + l * blockRate * survey -> pass_parameters[i].binsize,
                                 startdm + k * dmstep, temp_val + mean); 
-;                }
+                }
             
             shift += nsamp * ndms;
         }
@@ -143,13 +141,7 @@ void process_brute(float *buffer, FILE* output, SURVEY *survey, int read_nsamp, 
 	}
 	stddev = sqrt(stddev / iters); // Stddev for entire array
 
-    printf("%d: Mean: %f, Stddev: %f\n", (int) (time(NULL) - start_time), mean, stddev);
-
-    // Check if data in buffer is valid (due to empty packets)
-    if (prevStddev != 0 && stddev > prevStddev * 1.1) {
-        printf("Skipping buffer...\n");
-        return;
-    }
+    fprintf(stderr, "%d: Mean: %f, Stddev: %f\n", (int) (time(NULL) - start_time), mean, stddev);
 
     // Subtract dm mean from all samples and apply threshold
 	unsigned thread;
@@ -165,8 +157,6 @@ void process_brute(float *buffer, FILE* output, SURVEY *survey, int read_nsamp, 
                 }
             }
         }
-
-    prevStddev = stddev;
 }
 
 // Process dedispersion output

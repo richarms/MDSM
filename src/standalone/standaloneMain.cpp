@@ -101,7 +101,7 @@ int main(int argc, char *argv[])
     // Get pointer to next buffer
     float *udpBuffer = doubleBuffer.prepareRead(&timestamp, &sampRate);
        
-    // Copy first maxshift to temporary
+    // Copy first maxshift to temporary store
     memcpy(maxshift, udpBuffer + (samples - shift) * nPols * survey -> nsubs, shift * memSize);
                      
     doubleBuffer.readReady();

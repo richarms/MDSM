@@ -110,12 +110,10 @@ void UDPChunker::run()
         }
         
         // Missing packets
-        else if (diff > _samplesPerPacket) 
-           // -1 since it includes the received packet as well
-            lostPackets = (diff / _samplesPerPacket) - 1;  
-
-        if (lostPackets > 0)
+        else if (diff > _samplesPerPacket) {
+            lostPackets = (diff / _samplesPerPacket) - 1;  // -1 since it includes the received packet as well
             fprintf(stderr, "==================== Generated %u empty packets =====================\n", lostPackets);
+        }
 
         // Generate lostPackets empty packets, if any
         unsigned packetCounter = 0;

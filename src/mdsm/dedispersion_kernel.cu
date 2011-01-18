@@ -341,7 +341,7 @@ __global__ void fold(float *input, float *output, int nsamp, float tsamp,
                  b += blockDim.x)
     {
         float val = 0;
-        for(unsigned s = 0; s < nsamp / bins; s ++)
+        for(unsigned s = 0; s < floorf(nsamp / bins); s ++)
             val += input[blockIdx.x * (nsamp + shift) + shift + s * bins + b];
          output[blockIdx.x * bins + b] = val / (nsamp / bins);
     }

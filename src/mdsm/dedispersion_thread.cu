@@ -341,11 +341,11 @@ void clip(float *d_input, float *d_means, THREAD_PARAMS* params, cudaEvent_t eve
     meanOfMeans /= (survey -> nsubs * 1.0);
 
     // Apply subband excision
-    for(unsigned i = 0; i < survey -> nsubs; i++)
-        if (means[i] > 2 * meanOfMeans) {
-            cudaMemset(d_input + i * samples, 0, samples * sizeof(float)); // TODO: need to set this as meanOfMeans...
-            printf("Performed excision on subband %d\n", i);
-        }
+//    for(unsigned i = 0; i < survey -> nsubs; i++)
+//        if (means[i] < meanOfMeans / 2) {
+//            cudaMemset(d_input + i * samples, 0, samples * sizeof(float)); // TODO: need to set this as meanOfMeans...
+//            printf("Performed excision on subband %d\n", i);
+//        }
 
     cudaEventRecord(event_stop, 0);
     cudaEventSynchronize(event_stop);
@@ -355,6 +355,7 @@ void clip(float *d_input, float *d_means, THREAD_PARAMS* params, cudaEvent_t eve
 }
 
 // Fold data
+int prevDiff = 0;
 void fold(float *d_input, float *d_output, THREAD_PARAMS* params, 
           cudaEvent_t event_start, cudaEvent_t event_stop, int counter)
 {
@@ -367,7 +368,9 @@ void fold(float *d_input, float *d_output, THREAD_PARAMS* params,
 
     // NOTE: we must align buffers otherwise intra-buffer folding will be incorrect
     int nbins = survey -> period / survey -> tsamp;
-    int shift = ((nbins - survey -> nsamp % nbins + (survey->nsamp/3276)) * counter) % nbins;
+    int shift = (nbins - prevDiff) % nbins;
+    printf("Diff: %d, prevDiff: %d, shift: %d. total: %d\n", survey -> nsamp % nbins, prevDiff, shift, (survey -> nsamp - shift - (survey -> nsamp - shift) % nbins) % nbins);
+    prevDiff = (survey -> nsamp - shift) % nbins;
 
     fold<<<dim3(survey -> tdms, 1), 512 >>>(d_output, d_input, survey -> nsamp - shift, survey -> tsamp, survey -> period, shift);
     cudaEventRecord(event_stop, 0);

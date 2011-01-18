@@ -1,14 +1,14 @@
 <observation>
-    <frequencies top="640" offset="-0.09765625" polarisations="2" />
-    <dm lowDM="0" numDMs="50" dmStep="1" useBruteForce="1" />
+    <frequencies top="630" offset="-0.078125" polarisations="2" />
+    <dm lowDM="0" numDMs="100" dmStep="0" useBruteForce="1" />
     <samples number="65536" /> 
-    <channels number="512" dedispSubbands="16" subbands="512" />
-    <timing tsamp="0.0004096" />
+    <channels number="256" dedispSubbands="16" subbands="256" />
+    <timing tsamp="0.00040959" />
     <gpus ids="1" />
     <output filePrefix="gmrt" baseDirectory="." 
             secondsPerFile="180" usePCTime="1" 
             singleFileMode="1" />
-    <processes transpose="1" channelise="1" clip="1" fold="1" period="0.338"/>
+    <processes transpose="1" channelise="1" clip="1" fold="1" period="0.387690634"/>
 
     <passes>
         <pass>

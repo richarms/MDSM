@@ -112,7 +112,7 @@ class UIWindow(gui.QMainWindow):
                 self.loadFile(dialog.selectedFiles()[0])
                 self.watcher.addPath(dialog.selectedFiles()[0])
             else:
-                self.statusBar().showMessage("No files selected...")
+                self.statusBar().showMessage("No files selected...", 2000)
                 return
 
     def loadFile(self, filename):

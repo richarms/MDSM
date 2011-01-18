@@ -317,8 +317,6 @@ float dmdelay(float f1, float f2)
 // input data will be stored
 float* initialiseMDSM(SURVEY* input_survey)
 {
-    int k;
-
     // Initialise survey
     survey = input_survey;
 
@@ -420,7 +418,7 @@ float* initialiseMDSM(SURVEY* input_survey)
     }
 
     // Create threads and assign devices
-    for(k = 0; k < num_devices; k++) {
+    for(int k = 0; k < num_devices; k++) {
 
         // Create THREAD_PARAMS for thread, based on input data and DEVICE_INFO
         threads_params[k].iterations = 1;
@@ -460,11 +458,9 @@ float* initialiseMDSM(SURVEY* input_survey)
 // Cleanup MDSM
 void tearDownMDSM()
 {
-    int k;
-
     // Join all threads, making sure they had a clean cleanup
     void *status;
-    for(k = 0; k < num_devices; k++)
+    for(int k = 0; k < num_devices; k++)
         if (pthread_join(threads[k], &status))
             { fprintf(stderr, "Error while joining threads\n"); exit(0); }
     pthread_join(output_thread, &status);
@@ -493,8 +489,6 @@ void tearDownMDSM()
 // Process one data chunk
 float *next_chunk(unsigned int data_read, unsigned &samples, double timestamp = 0, double blockRate = 0)
 {   
-    int k;
-
     printf("%d: Read %d * 1024 samples [%d]\n", (int) (time(NULL) - start), data_read / 1024, loop_counter);  
 
     // Lock thread params through rw_lock
@@ -514,7 +508,7 @@ float *next_chunk(unsigned int data_read, unsigned &samples, double timestamp = 
         printf("Entered stopping condition...\n");
         output_params.stop = 1;
         periodicity_params.stop = 1;
-        for(k = 0; k < num_devices; k++) 
+        for(int k = 0; k < num_devices; k++) 
             threads_params[k].stop = 1;
 
         // Release rw_lock
@@ -534,7 +528,7 @@ float *next_chunk(unsigned int data_read, unsigned &samples, double timestamp = 
               data_read -= data_read % survey -> pass_parameters[survey -> num_passes - 1].binsize;
 
             output_params.survey -> nsamp = data_read;
-            for(k = 0; k < num_devices; k++)
+            for(int k = 0; k < num_devices; k++)
                 threads_params[k].survey -> nsamp = data_read;
       }
 
