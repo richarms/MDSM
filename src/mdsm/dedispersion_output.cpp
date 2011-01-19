@@ -143,7 +143,7 @@ void process_brute(float *buffer, FILE* output, SURVEY *survey, int read_nsamp, 
 
     fprintf(stderr, "%d: Mean: %f, Stddev: %f\n", (int) (time(NULL) - start_time), mean, stddev);
 
-    // Subtract dm mean from all samples and apply threshold
+    // Subtract dm mean from all samples and apply threshold TODO: FIX
 	unsigned thread;
 	int thread_shift = survey -> tdms * survey -> dmstep / survey -> num_threads;
 	for(thread = 0; thread < survey -> num_threads; thread++) {

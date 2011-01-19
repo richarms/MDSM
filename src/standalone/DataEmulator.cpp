@@ -24,6 +24,7 @@ int main(int argc, char *argv[])
     FILE_HEADER* header;
     FILE* fp = fopen(argv[1], "rb");
     header = read_header(fp);
+    unsigned nbits = 8;
        
     // Connect to host
     QUdpSocket* socket = new QUdpSocket;
@@ -47,7 +48,7 @@ int main(int argc, char *argv[])
     // Send whole file
     do {
         // Read data from file
-        data_read = read_block(fp, header -> nbits, dataBuffer, sampPerPacket * subsPerPacket);
+        data_read = read_block(fp, nbits, dataBuffer, sampPerPacket * subsPerPacket);
  
         // Convert data to packet format
         if (sampSize == 16)

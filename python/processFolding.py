@@ -118,22 +118,22 @@ class UIWindow(gui.QMainWindow):
     def loadFile(self, filename):
         """ Load file """
         self.statusBar().showMessage("Processing output file!")
-        f = open(filename, 'rb')
+        
+        with open(filename, 'rb') as f:
+            # Read header
+            data = f.read(20)
+            self._tdms, self._dmstep, self._tsamp, self._period, self._bins = struct.unpack('ifffi', data)
 
-        # Read header
-        data = f.read(20)
-        self._tdms, self._dmstep, self._tsamp, self._period, self._bins = struct.unpack('ifffi', data)
+            # Process data
+            filesize = os.path.getsize(filename) - 20
+            buffSize = self._tdms * self._bins;
+            self._data = np.zeros((self._tdms, self._bins), dtype='float')
 
-        # Process data
-        filesize = os.path.getsize(filename) - 20
-        buffSize = self._tdms * self._bins;
-        self._data = np.zeros((self._tdms, self._bins), dtype='float')
-
-        for i in range(filesize / (buffSize * 4)):
-            data = f.read(buffSize * 4)
-            tempData = np.array(struct.unpack(buffSize * 'f', data))
-            tempData = tempData.reshape(self._tdms, self._bins)
-            self._data = self._data + tempData
+            for i in range(filesize / (buffSize * 4)):
+                data = f.read(buffSize * 4)
+                tempData = np.array(struct.unpack(buffSize * 'f', data))
+                tempData = tempData.reshape(self._tdms, self._bins)
+                self._data = self._data + tempData
 
         # Update UI
         self.mainWidget.dmSlider.setMaximum(self._tdms - 1)

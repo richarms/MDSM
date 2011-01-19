@@ -71,12 +71,12 @@ int main(int argc, char *argv[])
     for(i = 0; i < tdms; i++)
         for(j = 0; j < nsamp; j++) {
             input[i *nsamp + j] = i + 1;
-//            printf("Dm: %d samp: %d = %f \n", i, j, input[i*nsamp+j]);
+            printf("Dm: %d samp: %d = %f \n", i, j, input[i*nsamp+j]);
          }
          
 
     // Initialise CUDA stuff
-    cutilSafeCall( cudaSetDevice(0));
+    cutilSafeCall( cudaSetDevice(1));
     cudaEvent_t event_start, event_stop;
     float timestamp;
 

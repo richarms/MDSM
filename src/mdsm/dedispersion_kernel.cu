@@ -335,15 +335,16 @@ __global__ void fold(float *input, float *output, int nsamp, float tsamp,
                     float period, int shift)
 {
     int bins = period / tsamp;
+    int values = floorf(nsamp / bins);
 
     for(unsigned b = threadIdx.x;
                  b < bins;
                  b += blockDim.x)
     {
         float val = 0;
-        for(unsigned s = 0; s < floorf(nsamp / bins); s ++)
+        for(unsigned s = 0; s < values; s ++)
             val += input[blockIdx.x * (nsamp + shift) + shift + s * bins + b];
-         output[blockIdx.x * bins + b] = val / (nsamp / bins);
+         output[blockIdx.x * bins + b] = val / values;
     }
 }
 

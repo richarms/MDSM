@@ -2,7 +2,7 @@
 #include "dedispersion_thread.h"
 #include "math.h"
 
-FILE *fp = NULL, *foldedFile = NULL;
+FILE *fp = NULL, *foldedFile = NULL, *dedispFile = NULL;
 
 DEVICES* initialise_devices(SURVEY* survey)
 {
@@ -200,18 +200,24 @@ void brute_force_dedispersion(float *d_input, float *d_output, THREAD_PARAMS* pa
 
     // ------------------------------------- Perform dedispersion on GPU --------------------------------------
     cudaEventRecord(event_start, 0);
-    float startdm = survey -> lowdm + survey -> dmstep * survey -> tdms / survey -> num_threads * params -> thread_num;
   
     // Optimised kernel
-    opt_dedisperse_loop<<< dim3(survey -> nsamp / 128, survey -> tdms / survey -> num_threads), 128, 128 >>>
+    opt_dedisperse_loop<<< dim3(512, survey -> tdms), 128, 128 >>>
 			(d_output, d_input, survey -> nsamp, survey -> nchans,
-			 survey -> tsamp, 1, startdm, survey -> dmstep, maxshift, 0, 0);
+			 survey -> tsamp, 1, survey -> lowdm, survey -> dmstep, maxshift, 0, 0);
 
     cudaEventRecord(event_stop, 0);
 	cudaEventSynchronize(event_stop);
 	cudaEventElapsedTime(&timestamp, event_start, event_stop);
 	printf("%d: Performed Brute-Force Dedispersion %d: %lf\n", (int) (time(NULL) - params -> start),
-															   params -> thread_num, timestamp);
+															          params -> thread_num, timestamp);
+    // Temporary dump of dedispersed data
+    if (0) {
+        cudaMemcpy(params -> output, d_output, survey -> nsamp * survey -> tdms * sizeof(float), cudaMemcpyDeviceToHost);
+        fwrite(params -> output, sizeof(float), survey -> nsamp * survey -> tdms, dedispFile);
+        printf("Dumped dedispersed data to disk...\n");
+        exit(-1);
+    }
 }
 
 // Perform channelisation and intensity calculation on the GPU
@@ -229,7 +235,7 @@ void channelise(cufftComplex *d_input, float *d_output, THREAD_PARAMS* params,
     cufftPlan1d(&plan, chansPerSubband, CUFFT_C2C, numSamples * survey -> nsubs * survey -> npols);
        
     cudaEventRecord(event_start, 0);
-    cufftExecC2C(plan, d_input, d_input, CUFFT_FORWARD); 
+//    cufftExecC2C(plan, d_input, d_input, CUFFT_FORWARD); 
     cudaEventRecord(event_stop, 0);
 	cudaEventSynchronize(event_stop);
 	cudaEventElapsedTime(&timestamp, event_start, event_stop);
@@ -368,8 +374,7 @@ void fold(float *d_input, float *d_output, THREAD_PARAMS* params,
 
     // NOTE: we must align buffers otherwise intra-buffer folding will be incorrect
     int nbins = survey -> period / survey -> tsamp;
-    int shift = (nbins - prevDiff) % nbins;
-    printf("Diff: %d, prevDiff: %d, shift: %d. total: %d\n", survey -> nsamp % nbins, prevDiff, shift, (survey -> nsamp - shift - (survey -> nsamp - shift) % nbins) % nbins);
+    int shift = (nbins - prevDiff + ((counter == 0) ? 0 : 35)) % nbins;
     prevDiff = (survey -> nsamp - shift) % nbins;
 
     fold<<<dim3(survey -> tdms, 1), 512 >>>(d_output, d_input, survey -> nsamp - shift, survey -> tsamp, survey -> period, shift);
@@ -406,6 +411,7 @@ void* dedisperse(void* thread_params)
     // Temporary output file
     fp = fopen("channelisedOutput.dat", "wb");
     foldedFile = fopen("foldedOutput.dat", "wb");
+    dedispFile = fopen("dedispOutput.dat", "wb");
 
     // Initialise events / performance timers
     cudaEvent_t event_start, event_stop;
