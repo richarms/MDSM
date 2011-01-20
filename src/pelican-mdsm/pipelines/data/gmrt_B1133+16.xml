@@ -1,0 +1,12 @@
+<observation>
+    <frequencies top="630" offset="-0.078125" polarisations="2" />
+    <dm lowDM="0" numDMs="100" dmStep="0.1" useBruteForce="1" />
+    <samples number="262144" /> 
+    <channels number="256" subbands="256" />
+    <timing tsamp="0.0000128" />
+    <gpus ids="1" />
+    <output filePrefix="gmrt" baseDirectory="." 
+            secondsPerFile="180" usePCTime="1" 
+            singleFileMode="1" />
+    <processes transpose="1" channelise="1" clip="1" fold="1" period="1.188"/>
+</observation>
