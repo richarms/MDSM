@@ -372,10 +372,9 @@ void fold(float *d_input, float *d_output, THREAD_PARAMS* params,
     // ------------------------------------- Perform folding on GPU --------------------------------------
     cudaEventRecord(event_start, 0);
 
-    // NOTE: we must align buffers otherwise intra-buffer folding will be incorrect
-    int nbins = survey -> period / survey -> tsamp;
-    int shift = (nbins - prevDiff + ((counter == 0) ? 0 : 35)) % nbins;
-    prevDiff = (survey -> nsamp - shift) % nbins;
+    float nbins = survey -> period / survey -> tsamp; 
+    int shift = prevDiff == 0 ? 0 : (int) nbins - prevDiff;
+    prevDiff = survey -> nsamp - shift - ((int) ((int) (survey -> nsamp - shift) / nbins) * nbins);
 
     fold<<<dim3(survey -> tdms, 1), 512 >>>(d_output, d_input, survey -> nsamp - shift, survey -> tsamp, survey -> period, shift);
     cudaEventRecord(event_stop, 0);

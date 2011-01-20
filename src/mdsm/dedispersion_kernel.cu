@@ -290,7 +290,7 @@ __global__ void expandValues(short *input, float *output, int nvalues)
             s < nvalues;
             s += gridDim.x * blockDim.x)  {
                  
-        // Load polarisations and save in output (REAL AND IMAGINARY ARE INVERTED!!)
+        // Load polarisations and save in output (NOTE: REAL AND IMAGINARY ARE INVERTED!!)
           output[s * 2]     = (float) input[s * 2 + 1];
           output[s * 2 + 1] = (float) input[s * 2];
     }
@@ -334,17 +334,17 @@ __global__ void transposeDiagonal(float *idata, float *odata, int width, int hei
 __global__ void fold(float *input, float *output, int nsamp, float tsamp,
                     float period, int shift)
 {
-    int bins = period / tsamp;
+    float bins = period / tsamp;
     int values = floorf(nsamp / bins);
 
     for(unsigned b = threadIdx.x;
                  b < bins;
-                 b += blockDim.x)
+                 b ++)
     {
         float val = 0;
         for(unsigned s = 0; s < values; s ++)
-            val += input[blockIdx.x * (nsamp + shift) + shift + s * bins + b];
-         output[blockIdx.x * bins + b] = val / values;
+            val += input[(int) (blockIdx.x * (nsamp + shift) + shift + s * (bins) + b)];
+         output[blockIdx.x * int(bins) + b] = val / values;
     }
 }
 
