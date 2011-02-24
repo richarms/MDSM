@@ -339,7 +339,7 @@ __global__ void fold(float *input, float *output, int nsamp, float tsamp,
 
     for(unsigned b = threadIdx.x;
                  b < bins;
-                 b ++)
+                 b += blockDim.x)
     {
         float val = 0;
         for(unsigned s = 0; s < values; s ++)

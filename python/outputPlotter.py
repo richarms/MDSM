@@ -80,7 +80,11 @@ if __name__ == "__main__":
             ax3.set_ylabel('Intensity')
             ax3.set_title('Intensity vs Time plot')
 
-            plt.show()
+            if (0):
+                plt.show() 
+            else:
+                fig.set_size_inches(12, 10)
+                plt.savefig("processedDedispersed.png", dpi = 100)
 
         else:
             print "Invalid x/y values"

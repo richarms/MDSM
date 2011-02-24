@@ -6,9 +6,11 @@ import struct
 import os, sys
 
 # Store global parameters
-args = { 'nsamp'  : 65536,
-         'nchans' : 256,
-         'nbits'  : 16}
+args = { 'nsamp'   : 65536,
+         'nchans'  : 256,
+         'nbits'   : 16,
+         'offline' : False,
+         'integs'  : 32}
 
 # Create main figure
 fig = plt.figure()
@@ -18,49 +20,48 @@ def read_data():
     """ Read data from the file and store as a numpy matrix """
     f = open(args['filename'])
 
-    if args['nbits'] == 8:
+    if nbits == 8:
         mode = 'B'
-    elif args['nbits'] == 16:
+    elif nbits == 16:
         mode = 'h'
-    elif args['nbits'] == 32:
+    elif nbits == 32:
         mode = 'f'
     else:
-        print args['nbits'] + " bits not supported"
+        print nbits + " bits not supported"
         exit()
 
-    data = f.read(args['nsamp'] * args['nchans'] * args['nbits'] / 8)
-    data = np.array(struct.unpack( args['nsamp'] * args['nchans'] * mode, data ))
-    return np.reshape(data, (args['nsamp'], args['nchans']))
+    data = f.read(nsamp * nchans * nbits / 8)
+    data = np.array(struct.unpack( nsamp * nchans * mode, data ))
+    return np.reshape(data, (nsamp, nchans))
 
 def plot_bandpass(data, ax):
     """ Plot bandpass """
 
-    x = range(args['nchans'])
+    print "Generating Bandpass"
+    x = range(nchans)
     if 'fch1' in args.keys() and 'foff' in args.keys():
-        x = np.arange(args['fch1'], args['fch1'] - (args['foff'] * args['nchans']), -args['foff'])
+        x = np.arange(fch1, fch1 - (foff * nchans), -foff)
 
-    ax.plot(x[::-1], np.sum(data, axis=0), 'r')
+    ax.semilogy(x[::-1], 10 * np.sum(data, axis=0) / (nsamp * integs * 1.0), 'r')
     ax.grid(True)
     ax.set_xlabel('Frequency (MHz)')
     ax.set_ylabel('dB')
     ax.set_title('Bandpass plot')
 
-    with open('bandpass.txt', 'w') as f:
-        np.sum(data, axis=0).tofile(f, '\n')
-
 def plot_dedispersed(data, ax):
     """ Dedisperse data with a given DM """
 
+    print "Dedispersing Data"
     dedisp = lambda f1, f2, dm, tsamp: 4148.741601 * (f1**-2 - f2**-2) * dm / tsamp
-    shifts = [dedisp(args['fch1'] + diff, args['fch1'], args['dm'], args['tsamp']) 
-             for diff in -np.arange(0, args['foff'] * args['nchans'], args['foff'])]
+    shifts = [dedisp(fch1 + diff, fch1, dm, tsamp) 
+             for diff in -np.arange(0, foff * nchans, foff)]
 
     # Roll each subband by its shift to remove dispersion
-    for i in range(args['nchans']):
+    for i in range(nchans):
         data[:,i] = np.roll(data[:,i], -int(shifts[i]))
     dedispersed = np.sum(data, 1)
 
-    x = np.arange(0, args['tsamp'] * int(args['nsamp'] - ceil(max(shifts))), args['tsamp'])
+    x = np.arange(0, tsamp * int(nsamp - ceil(max(shifts))), tsamp)
     ax.plot(x, dedispersed[:np.size(x)])
     ax.grid(True)
     ax.set_xlabel('Time (s)')
@@ -72,20 +73,21 @@ def plot_dedispersed(data, ax):
 def plot_profile(data, ax):
     """ Fold the data with a given period """
 
-    bins = args['period'] / args['tsamp']
+    print "Creating Pulsar Profile"
+    bins = period / tsamp
     int_bins = int(bins)
     profile = np.zeros(int_bins)
 
     for i in range(int_bins):
-        for j in range(int(args['nsamp'] / bins)):
+        for j in range(int(nsamp / bins)):
             profile[i] += data[int(j * bins + i)]
 
-    x = np.arange(0, args['tsamp'] * int_bins, args['tsamp'])
+    x = np.arange(0, tsamp * int_bins, tsamp)
     ax.plot(x[:np.size(profile)], profile)
     ax.grid(True)
     ax.set_xlabel('Time (ms)')
     ax.set_ylabel('Power')
-    ax.set_title('Folded Time Series (Period %.3fms)' % args['period'])
+    ax.set_title('Folded Time Series (Period %.3fms)' % period)
 
     return profile
 
@@ -103,18 +105,28 @@ if __name__ == "__main__":
         if ind > 0:
             args[item[:ind]] = eval(item[ind + 1:])
 
+    for k, v in args.iteritems():
+        globals()[k] = v
+
     # Read data
     print "Reading data..."
     data = read_data()
 
     # Generate plots
-    print "Generating bandpass"
-    plot_bandpass(data, fig.add_subplot(223))
+    if not set(['dm', 'fch1', 'foff', 'tsamp']).issubset(args.keys()):
+        plot_bandpass(data, fig.add_subplot(111))
 
-    print "Dedispersing time series"
- #   dedispersed = plot_dedispersed(data, fig.add_subplot(211))
+    elif not set(['period']).issubset(set(args.keys())):
+        plot_bandpass(data, fig.add_subplot(212))
+        dedispersed = plot_dedispersed(data, fig.add_subplot(211))
 
-    print "Folding time series"
- #   profile = plot_profile(dedispersed, fig.add_subplot(224))
+    else:
+        plot_bandpass(data, fig.add_subplot(224))
+        dedispersed = plot_dedispersed(data, fig.add_subplot(211))
+        profile = plot_profile(dedispersed, fig.add_subplot(223))
     
-    plt.show()
+    if offline:
+        fig.set_size_inches(12, 10)
+        plt.savefig("processedRaw.png", dpi = 100)
+    else:
+        plt.show()

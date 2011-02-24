@@ -166,7 +166,41 @@ class UIWindow(gui.QMainWindow):
         exit()
 
 if __name__ == "__main__":
-    app = gui.QApplication(sys.argv)
-    app.setApplicationName("FoldedPlotter")
-    window = UIWindow("processFolding.ui")
-    sys.exit(app.exec_())
+
+    if len(sys.argv) == 3:
+
+        # Process file offline
+        with open(sys.argv[1], 'rb') as f:
+            print "Processing file..."
+
+            # Read header
+            header = f.read(20)
+            tdms, dmstep, tsamp, period, bins = struct.unpack('ifffi', header)
+
+            # Process data
+            filesize = os.path.getsize(sys.argv[1]) - 20
+            buffSize = tdms * bins;
+            data = np.zeros((tdms, bins), dtype='float')
+
+            for i in range(filesize / (buffSize * 4)):
+                read_data = f.read(buffSize * 4)
+                tempData = np.array(struct.unpack(buffSize * 'f', read_data))
+                tempData = tempData.reshape(tdms, bins)
+                data = data + tempData
+
+            # Dump processed data to file
+            with open(sys.argv[2], 'wb') as f:
+                f.write(struct.pack('ifffi', tdms, dmstep, tsamp, period, bins))
+                for i in range(tdms):
+                    for j in range(bins):
+                        f.write(struct.pack('f', data[i,j]))
+
+    elif len(sys.argv) == 1:
+        # Process file through UI
+        app = gui.QApplication(sys.argv)
+        app.setApplicationName("FoldedPlotter")
+        window = UIWindow("processFolding.ui")
+        sys.exit(app.exec_())
+
+    else:
+        print "Script requried either 2 arguments (offline) or none, %d provided" % (len(sys.argv) - 1)
