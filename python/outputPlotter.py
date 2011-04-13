@@ -80,7 +80,7 @@ if __name__ == "__main__":
             ax3.set_ylabel('Intensity')
             ax3.set_title('Intensity vs Time plot')
 
-            if (0):
+            if (1):
                 plt.show() 
             else:
                 fig.set_size_inches(12, 10)

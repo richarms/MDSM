@@ -23,7 +23,7 @@ def read_data():
     if nbits == 8:
         mode = 'B'
     elif nbits == 16:
-        mode = 'h'
+        mode = 'H'
     elif nbits == 32:
         mode = 'f'
     else:
@@ -42,7 +42,7 @@ def plot_bandpass(data, ax):
     if 'fch1' in args.keys() and 'foff' in args.keys():
         x = np.arange(fch1, fch1 - (foff * nchans), -foff)
 
-    ax.semilogy(x[::-1], 10 * np.sum(data, axis=0) / (nsamp * integs * 1.0), 'r')
+    ax.semilogy(x[::-1], np.sum(data, axis=0) / (nsamp * integs * 1.0), 'r')
     ax.grid(True)
     ax.set_xlabel('Frequency (MHz)')
     ax.set_ylabel('dB')
@@ -58,7 +58,7 @@ def plot_dedispersed(data, ax):
 
     # Roll each subband by its shift to remove dispersion
     for i in range(nchans):
-        data[:,i] = np.roll(data[:,i], -int(shifts[i]))
+        data[:,i] = np.roll(data[:,i], -int(shifts[nchans - 1 - i]))
     dedispersed = np.sum(data, 1)
 
     x = np.arange(0, tsamp * int(nsamp - ceil(max(shifts))), tsamp)
@@ -87,7 +87,7 @@ def plot_profile(data, ax):
     ax.grid(True)
     ax.set_xlabel('Time (ms)')
     ax.set_ylabel('Power')
-    ax.set_title('Folded Time Series (Period %.3fms)' % period)
+    ax.set_title('Folded Time Series (Period %.3fms)' % (period * 1000))
 
     return profile
 

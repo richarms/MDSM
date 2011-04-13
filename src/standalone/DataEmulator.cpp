@@ -24,7 +24,7 @@ int main(int argc, char *argv[])
     FILE_HEADER* header;
     FILE* fp = fopen(argv[1], "rb");
     header = read_header(fp);
-    unsigned nbits = 8;
+    unsigned nbits = 16;  // TEMPORARY
        
     // Connect to host
     QUdpSocket* socket = new QUdpSocket;
@@ -58,7 +58,7 @@ int main(int argc, char *argv[])
             for (unsigned i = 0; i < sampPerPacket; i++) {
                 for (unsigned j = 0; j < subsPerPacket; j++) {
                     unsigned index = i * subsPerPacket * nPols + j * nPols;
-                    s[index] = i16complex(dataBuffer[i * subsPerPacket + (subsPerPacket - j)], 0); // NOTE: inverted channels
+                    s[index] = i16complex(dataBuffer[i * subsPerPacket + j], 0); // NOTE: inverted channels
                     s[index + 1] = i16complex(0, 0);
                 }
             }

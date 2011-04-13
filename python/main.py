@@ -78,7 +78,7 @@ class MainWindow(gui.QMainWindow):
             pulseWidth = float(self.mainWidget.widthEdit.text())
             nchans = int(self.mainWidget.nchansEdit.text())
             bandwidth = float(self.mainWidget.bandwidthEdit.text()) * nchans
-            highFreq = 100.0 + float(self.mainWidget.highFreqEdit.text()) * float(self.mainWidget.bandwidthEdit.text()) 
+            highFreq = float(self.mainWidget.highFreqEdit.text())
             nchanslog2 = float(log(nchans,2))
             smearing = float(self.mainWidget.smearEdit.text())
             snr = float(self.mainWidget.snrEdit.text())

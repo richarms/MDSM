@@ -44,8 +44,10 @@ typedef struct {
     unsigned num_gpus;
 
     // Folding parameters
-    double period;
-    
+    float outputProfile, outputDM;
+    double pStart, pStep;
+    unsigned int numPeriods;
+
     // Actions performed on the GPU
     bool performChannelisation, performTranspose, performFolding, performClipping;
 

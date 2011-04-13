@@ -2,7 +2,10 @@
 #include "dedispersion_thread.h"
 #include "math.h"
 
-FILE *fp = NULL, *foldedFile = NULL, *dedispFile = NULL;
+FILE *fp = NULL;
+
+// Folding arrays
+int *pPrevDiff, *pShifts;
 
 DEVICES* initialise_devices(SURVEY* survey)
 {
@@ -211,13 +214,6 @@ void brute_force_dedispersion(float *d_input, float *d_output, THREAD_PARAMS* pa
 	cudaEventElapsedTime(&timestamp, event_start, event_stop);
 	printf("%d: Performed Brute-Force Dedispersion %d: %lf\n", (int) (time(NULL) - params -> start),
 															          params -> thread_num, timestamp);
-    // Temporary dump of dedispersed data
-    if (0) {
-        cudaMemcpy(params -> output, d_output, survey -> nsamp * survey -> tdms * sizeof(float), cudaMemcpyDeviceToHost);
-        fwrite(params -> output, sizeof(float), survey -> nsamp * survey -> tdms, dedispFile);
-        printf("Dumped dedispersed data to disk...\n");
-        exit(-1);
-    }
 }
 
 // Perform channelisation and intensity calculation on the GPU
@@ -235,7 +231,7 @@ void channelise(cufftComplex *d_input, float *d_output, THREAD_PARAMS* params,
     cufftPlan1d(&plan, chansPerSubband, CUFFT_C2C, numSamples * survey -> nsubs * survey -> npols);
        
     cudaEventRecord(event_start, 0);
-//    cufftExecC2C(plan, d_input, d_input, CUFFT_FORWARD); 
+    cufftExecC2C(plan, d_input, d_input, CUFFT_FORWARD); 
     cudaEventRecord(event_stop, 0);
 	cudaEventSynchronize(event_stop);
 	cudaEventElapsedTime(&timestamp, event_start, event_stop);
@@ -361,8 +357,7 @@ void clip(float *d_input, float *d_means, THREAD_PARAMS* params, cudaEvent_t eve
 }
 
 // Fold data
-int prevDiff = 0;
-void fold(float *d_input, float *d_output, THREAD_PARAMS* params, 
+void fold(float *d_input, float *d_output, int *d_pShifts, THREAD_PARAMS* params, 
           cudaEvent_t event_start, cudaEvent_t event_stop, int counter)
 {
 	// Define function variables;
@@ -370,13 +365,26 @@ void fold(float *d_input, float *d_output, THREAD_PARAMS* params,
     float timestamp;
 
     // ------------------------------------- Perform folding on GPU --------------------------------------
+
     cudaEventRecord(event_start, 0);
+    // Calculate shifts for intra-buffer calls
+    for(unsigned i = 0; i < survey -> numPeriods; i++) {
+        float period = survey -> pStart + survey -> pStep * i;
+        float nbins = period / survey -> tsamp;
+        pShifts[i] = pPrevDiff[i] == 0 ? 0 : (int) (nbins - pPrevDiff[i]); 
 
-    float nbins = survey -> period / survey -> tsamp; 
-    int shift = prevDiff == 0 ? 0 : (int) nbins - prevDiff;
-    prevDiff = survey -> nsamp - shift - ((int) ((int) (survey -> nsamp - shift) / nbins) * nbins);
+        //TODO FIX THIS BIJATCH
+        pPrevDiff[i] = survey -> nsamp - pShifts[i] - round(floor((survey -> nsamp - pShifts[i]) / nbins) * nbins);
+    }
 
-    fold<<<dim3(survey -> tdms, 1), 512 >>>(d_output, d_input, survey -> nsamp - shift, survey -> tsamp, survey -> period, shift);
+    // Copy shifts to GPU memory
+    cutilSafeCall( cudaMemcpy(d_pShifts, pShifts, survey -> numPeriods * sizeof(int), cudaMemcpyHostToDevice));
+
+    // Fold on GPU
+    multi_fold <<<dim3(survey -> tdms / survey -> num_threads, survey -> numPeriods), 128 >>>
+                 (d_input, d_output, survey -> nsamp, survey -> tsamp, survey -> pStart, 
+                 survey -> pStep, params -> folded_size, d_pShifts);
+
     cudaEventRecord(event_stop, 0);
 	cudaEventSynchronize(event_stop);
 	cudaEventElapsedTime(&timestamp, event_start, event_stop);
@@ -393,6 +401,7 @@ void* dedisperse(void* thread_params)
     time_t start = params -> start;
     SURVEY *survey = params -> survey;
     float *d_input, *d_output, *d_means;
+    int *d_pShifts;
 
     printf("%d: Started thread %d\n", (int) (time(NULL) - start), tid);
 
@@ -407,20 +416,26 @@ void* dedisperse(void* thread_params)
     if (survey -> performClipping)
         cutilSafeCall ( cudaMalloc((void **) &d_means, survey -> nsubs * sizeof(float)) );
 
+    if (survey -> performFolding)
+        cutilSafeCall ( cudaMalloc((void **) &d_pShifts, survey -> numPeriods * sizeof(int)));
+
     // Temporary output file
     fp = fopen("channelisedOutput.dat", "wb");
-    foldedFile = fopen("foldedOutput.dat", "wb");
-    dedispFile = fopen("dedispOutput.dat", "wb");
 
     // Initialise events / performance timers
     cudaEvent_t event_start, event_stop;
     float timestamp;
 
     cudaEventCreate(&event_start);
-    cudaEventCreateWithFlags(&event_stop, cudaEventBlockingSync); // Blocking sync when waiting for kernel launches#
+    cudaEventCreateWithFlags(&event_stop, cudaEventBlockingSync); // Blocking sync when waiting for kernel launches
 
-    // Calculate size for folding
-    float foldedSize = survey -> tdms * (survey -> period / survey -> tsamp);
+    // Initialise folding arrays if required
+    if (survey -> performFolding) {
+        pPrevDiff = (int *) malloc(survey -> numPeriods * sizeof(int));
+        pShifts = (int *) malloc(survey -> numPeriods * sizeof(int));
+        memset(pPrevDiff, 0, survey -> numPeriods * sizeof(int));
+        memset(pShifts, 0, survey -> numPeriods * sizeof(int));
+    }  
 
     // Thread processing loop
     while (1) {
@@ -430,15 +445,17 @@ void* dedisperse(void* thread_params)
             // Read input data into GPU memory
             cudaEventRecord(event_start, 0);
             cudaMemset(d_input, 0, params -> inputsize);
+
             // If performing channelisation, input data will contain npols polarisations with complex 32-bit values
-            if (survey -> performTranspose) {
+            if (survey -> performTranspose)
                 cutilSafeCall( cudaMemcpy(d_input, params -> input, survey -> npols * sizeof(float) *
                                          (nsamp + maxshift) * nchans, cudaMemcpyHostToDevice) );  
-            }
+            
             // If performing channelisation, input data will contain npols polarisations with complex 64-bit values
             else if (survey -> performChannelisation)
                 cutilSafeCall( cudaMemcpy(d_input, params -> input, survey -> npols * sizeof(cufftComplex) *
                                          (nsamp + maxshift) * nchans, cudaMemcpyHostToDevice) );
+
             // Dedispersing data only
             else
                 cutilSafeCall( cudaMemcpy(d_input, params -> input, (nsamp + maxshift) * nchans * sizeof(float), 
@@ -458,15 +475,15 @@ void* dedisperse(void* thread_params)
         // Perform operations on GPU data
         if (loop_counter >= params -> iterations){
 
-            // Perform matrix transpose 
+            // Perform matrix transpose if required
             if (survey -> performTranspose)
                 transpose(d_input, d_output, params, event_start, event_stop);
 
-            // Perform channelisation and calculate intensities
+            // Perform channelisation and calculate intensities if required
             if (survey -> performChannelisation)
                 channelise((cufftComplex*) d_input, d_output, params, event_start, event_stop);
 
-            // Perform RFI clipping
+            // Perform RFI clipping if required
             if (survey -> performClipping)
                 clip(d_input, d_means, params, event_start, event_stop);
                 
@@ -475,6 +492,10 @@ void* dedisperse(void* thread_params)
         		brute_force_dedispersion(d_input, d_output, params, event_start, event_stop, maxshift);
         	else
         		subband_dedispersion(d_input, d_output, params, event_start, event_stop);
+
+            // Fold output if required
+            if (survey -> performFolding)
+        		fold(d_output, d_input, d_pShifts, params, event_start, event_stop, loop_counter - params -> iterations);
         }
 
         // Wait output barrier
@@ -486,23 +507,21 @@ void* dedisperse(void* thread_params)
 
             // Collect and write output to host memory
             cudaEventRecord(event_start, 0);
+
+            // Copy dedispersed data
             cutilSafeCall(cudaMemcpy( params -> output, d_output, 
-            						  params -> dedispersed_size * sizeof(float),
+        						      params -> dedispersed_size * sizeof(float),
                                       cudaMemcpyDeviceToHost) );
+
             cudaEventRecord(event_stop, 0);
             cudaEventSynchronize(event_stop);
             cudaEventElapsedTime(&timestamp, event_start, event_stop);
 
-            // Perform folding here if folding is required
+            // Copy folded data
             if (survey -> performFolding) {
-                // Copy folded output to host memory
-                cudaMemset(d_input, 0, params -> inputsize);
-
-        		fold(d_input, d_output, params, event_start, event_stop, loop_counter - params -> iterations);
-             
                 cudaEventRecord(event_start, 0);
                 cutilSafeCall(cudaMemcpy( params -> folded_output, d_input, 
-                						  foldedSize * sizeof(float),
+                						  params -> folded_size * survey -> tdms / survey -> num_threads * sizeof(float),
                                           cudaMemcpyDeviceToHost) );
                 cudaEventRecord(event_stop, 0);
                 cudaEventSynchronize(event_stop);

@@ -33,7 +33,7 @@ endif(NOT GPU_VERSION_ARCHITECTURE)
 
 # === Find dependencies.
 if(NOT CUDA_SDK_ROOT_DIR)
-    set(CUDA_SDK_ROOT_DIR ~/NVIDIA_GPU_Computing_SDK/C)
+    set(CUDA_SDK_ROOT_DIR /usr/local/cudaSDK/C)
 endif(NOT CUDA_SDK_ROOT_DIR)
 
 find_package(CUDA 2.3 REQUIRED)

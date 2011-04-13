@@ -64,8 +64,8 @@ brute_dedisp_imp:
 	$(NVCC) -o brute_dedisp_imp brute_dedisp_imp.cu $(LDFLAGS) $(INC) -L/lib
 	rm -f *.cu.o *.linkinfo
 
-brute_dedisp_imp_tex:
-	$(NVCC) -o brute_dedisp_imp_tex brute_dedisp_imp_tex.cu  $(LDFLAGS) $(INC) -L/lib
+openmp_cuda:
+	$(NVCC) -o openmp_cuda openmp_cuda.cu $(LDFLAGS) $(INC) -L/lib -Xcompiler -fopenmp -lgomp
 	rm -f *.cu.o *.linkinfo
 
 ################################################################################

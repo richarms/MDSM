@@ -6,13 +6,13 @@
 //#define FERMI
 
 // Stores temporary shift values
-__device__ __constant__ float dm_shifts[16384];
+__device__ __constant__ float dm_shifts[512];
 
 // Stores output value computed in inner loop for each sample
 //#ifdef FERMI
 //	__device__ __shared__ float localvalue[8192];
 //#else
-	__device__ __shared__ float localvalue[1024];
+//	__device__ __shared__ float localvalue[1024];
 //#endif
 
 #define TILE_DIM    16
@@ -51,6 +51,8 @@ __global__ void opt_dedisperse_loop(float *outbuff, float *buff, int nsamp, int 
 __global__ void dedisperse_loop(float *outuff, float *buff, int nsamp, int nchans, float tsamp,
                                 int chanfactor, float startdm, float dmstep, int inshift, int outshift)
 {
+    extern __shared__ float localvalue[];
+
     int samp, s, c, indx, soffset;
     float shift_temp;
 
@@ -78,6 +80,8 @@ __global__ void dedisperse_loop(float *outuff, float *buff, int nsamp, int nchan
 __global__ void dedisperse_subband(float *outbuff, float *buff, int nsamp, int nchans, int nsubs, 
                                    float startdm, float dmstep, float tsamp, int inshift, int outshift)
 {
+    extern __shared__ float localvalue[];
+
     int samp, s, c, indx, soffset, sband, tempval, chans_per_sub = nchans / nsubs;
     float shift_temp;
 
@@ -148,6 +152,8 @@ __global__ void opt_dedisperse_subband(float *outbuff, float *buff, int nsamp, i
 // ----------------------------- Channel Binnig Kernel --------------------------------
 __global__ void channel_binning_kernel(float *input, int nchans, int binsize)
 {
+    extern __shared__ float localvalue[];
+
     int b, c, channel;
     float total;
 
@@ -172,6 +178,8 @@ __global__ void channel_binning_kernel(float *input, int nchans, int binsize)
 // --------------------------- Data binning kernel ----------------------------
 __global__ void binning_kernel(float *input, int nsamp, int nchans, int binsize, int inshift, int outshift)
 {
+    extern __shared__ float localvalue[];
+
     int b, c, channel, shift;
 
     // Loop over all values (nsamp * nchans)
@@ -194,6 +202,8 @@ __global__ void binning_kernel(float *input, int nsamp, int nchans, int binsize,
 // --------------------------- In-place data binning kernel ----------------------------
 __global__ void inplace_binning_kernel(float *input, int nsamp, int nchans, int binsize)
 {
+    extern __shared__ float localvalue[];
+
     int b, c, channel, shift;
 
     // Loop over all values (nsamp * nchans)
@@ -215,6 +225,8 @@ __global__ void inplace_binning_kernel(float *input, int nsamp, int nchans, int 
 
 __global__ void inplace_memory_reorganisation(float *input, int nsamp, int nchans, int binsize)
 {
+    extern __shared__ float localvalue[];
+
     int c, channel, shift;
 
     // Loop over all values (nsamp * nchans)
@@ -330,24 +342,6 @@ __global__ void transposeDiagonal(float *idata, float *odata, int width, int hei
       odata[index_out + i * height] = tile[threadIdx.x][threadIdx.y + i];
 }
 
-// ---------------------- Folding kernel  ------------------------------
-__global__ void fold(float *input, float *output, int nsamp, float tsamp,
-                    float period, int shift)
-{
-    float bins = period / tsamp;
-    int values = floorf(nsamp / bins);
-
-    for(unsigned b = threadIdx.x;
-                 b < bins;
-                 b += blockDim.x)
-    {
-        float val = 0;
-        for(unsigned s = 0; s < values; s ++)
-            val += input[(int) (blockIdx.x * (nsamp + shift) + shift + s * (bins) + b)];
-         output[blockIdx.x * int(bins) + b] = val / values;
-    }
-}
-
 // ---------------------- RFI Clipping kernel --------------------------
 // One thread block per original subband (nsamp = nsamp * chansPerSubband)
 __global__ __device__ void rfi_clipping(float *input, float *means, int nsamp, int nsubs)
@@ -407,6 +401,51 @@ __global__ __device__ void rfi_clipping(float *input, float *means, int nsamp, i
 
         __syncthreads();
         input[blockIdx.x * nsamp + s] = val;
+    }
+}
+
+// ---------------------- Folding kernel  ------------------------------
+__global__ void fold(float *input, float *output, int nsamp, float tsamp,
+                    float period, int shift)
+{
+    float bins = period / tsamp;
+    int values = floorf(nsamp / bins);
+
+    for(unsigned b = threadIdx.x;
+                 b < bins;
+                 b += blockDim.x)
+    {
+        float val = 0;
+        for(unsigned s = 0; s < values; s ++)
+            val += input[(int) (blockIdx.x * (nsamp + shift) + shift + s * bins + b)];
+         output[blockIdx.x * int(bins) + b] = val / values;
+    }
+}
+
+// ---------------------- Multi-DM Folding kernel  ------------------------------
+__global__ void multi_fold(float *input, float *output, int nsamp, float tsamp,
+                           float startP, float deltaP, int dmFolds, int *shifts)
+{
+    // Calculate total shift to store output for block period
+    int outputShift = 0;
+    for(unsigned i = 0; i < blockIdx.y; i++)
+        outputShift += (int) ((startP + deltaP * i) / tsamp);
+
+    // Calculate parameters for block period
+    int shift = shifts[blockIdx.y];
+    float bins = (startP + deltaP * blockIdx.y) / tsamp;
+    int values = floorf((nsamp - shift) / bins);
+
+    // Fold (bin per thread)
+    for(unsigned b = threadIdx.x;
+                 b < bins;
+                 b += blockDim.x)
+    {
+        float val = 0;
+        for(unsigned s = 0; s < values; s ++)
+            val += input[(int) (blockIdx.x * nsamp + shift + s * bins + b)];
+       
+        output[blockIdx.x * dmFolds + outputShift + b] = val / values;
     }
 }
 

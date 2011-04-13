@@ -37,7 +37,7 @@ typedef struct {
     float *dmshifts;
 
     // Input and output buffers memory pointers & sizes
-    size_t inputsize, outputsize, dm_output, dedispersed_size;
+    size_t inputsize, outputsize, dm_output, dedispersed_size, folded_size;
     float *folded_output;
     float* output;
     float* input; 

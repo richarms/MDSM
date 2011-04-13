@@ -6,12 +6,14 @@
 #include "unistd.h"
 
 typedef struct {
+
     // Input parameters
     int nthreads, iterations, maxiters;
 
     // Input and output buffers memory pointers
     float* output_buffer;
     size_t dedispersed_size;
+    size_t folded_size;
    
     // Thread-specific info + synchronisation objects
     unsigned short stop;

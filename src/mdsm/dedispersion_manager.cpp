@@ -138,7 +138,7 @@ SURVEY* processSurveyParameters(QString filepath)
             }
             
             // Define processes to be computed on the GPU
-            else if(QString::compare(e.tagName(), QString("processes"), Qt::CaseInsensitive) == 0) {
+            else if (QString::compare(e.tagName(), QString("processes"), Qt::CaseInsensitive) == 0) {
                 if (e.attribute("channelise", "0").toUInt())
                     survey -> performChannelisation = true;
                 if (e.attribute("transpose", "0").toUInt())
@@ -146,9 +146,17 @@ SURVEY* processSurveyParameters(QString filepath)
                 if (e.attribute("clip", "0").toUInt())
                     survey -> performClipping = true;
                 if (e.attribute("fold", "0").toUInt()) {
-                    survey -> performFolding = true;
-                    survey -> period = e.attribute("period", "1").toFloat();
+
                 }
+            }
+
+            else if (QString::compare(e.tagName(), QString("fold"), Qt::CaseInsensitive) == 0) {
+                survey -> performFolding = e.attribute("fold", "0").toUInt() ? true : false;
+                survey -> pStart = e.attribute("pStart", "1").toFloat();
+                survey -> pStep = e.attribute("pStep", "1").toFloat();
+                survey -> numPeriods = e.attribute("numPeriods", "1").toFloat();
+                survey -> outputProfile = e.attribute("outputProfile", 0).toFloat();
+                survey -> outputDM = e.attribute("outputDm", 0).toFloat();
             }
         
             // Check if user has specified GPUs to use
@@ -286,23 +294,44 @@ int calculate_nsamp(int maxshift, size_t *inputsize, size_t* outputsize, unsigne
 	// If performing channelisation, change allocations for now
 	if (survey -> performChannelisation) {   
 	    
-	    unsigned long int tempInput = memory * 1024* 0.99 / 3 * 2;
+        // Re-assign buffer sizes
+	    unsigned long int tempInput = memory * 1024 * 0.99 / 3 * 2;
 	    unsigned long int tempOutput = memory * 1024 * 0.99 / 3;
 
 	    // Check if proposed nsamp will fit in memory
-//	    if (//tempInput < *inputsize || tempOutput < *outputsize ||
-//	        ((nsamp + survey -> maxshift) * survey -> nchans * survey -> npols * 8) > tempInput) {
-	        fprintf(stderr, "This requires %.2lf GB of memory (have %.2lf GB)\n", 
+	    if (((nsamp + survey -> maxshift) * survey -> nchans * survey -> npols * 8) > tempInput ||
+            tempInput < *inputsize || tempOutput < *outputsize )
+        {
+	        fprintf(stderr, "This requires %.3lf GB of memory (have %.3lf GB)\n", 
                              (float)( (nsamp + survey -> maxshift) * survey -> nchans * survey -> npols * 8.0) /
                              (float) (1024 * 1024 * 1024), tempInput / (float) (1024*1024*1024));
-//	        exit(-1);
-//	    }
+	        exit(-1);
+	    }
+
 	    *inputsize = tempInput;
 	    *outputsize = tempOutput;
-	    
-	    printf("[Channelisation] Input size: %d MB, output size: %d MB\n", 
-            (int) (*inputsize / 1024 / 1024), (int) (*outputsize/1024/1024));
+
+	    printf("[Channelisation] Input size: %.3lf MB, output size: %.3lf MB\n", 
+            *inputsize / 1024.0 / 1024.0, *outputsize / 1024.0 / 1024.0);
 	}
+
+    if (survey -> performFolding) {
+
+        // Calculate output required for folding (per DM)
+        size_t foldedSize = 0;
+        for(i = 0; i < survey -> numPeriods; i++)
+            foldedSize += (int) ((survey -> pStart + (survey -> pStep * i)) / survey -> tsamp);
+
+        printf("[Folding] Output size: %.3lf MB\n", foldedSize * sizeof(float) * (survey -> tdms / 1024.0) / 1024.0);
+
+        // Check if folded output will fit in buffer
+        if (foldedSize * survey -> tdms * sizeof(float) > *inputsize) {
+            printf("Folding output will not fit in memory! Have %.3lf MB, require %.3lf MB\n", 
+                    *inputsize / (1024.0 * 1024.0), 
+                    (foldedSize * survey -> tdms * sizeof(float)) / (1024.0 * 1024.0));
+            exit(0);
+        }        
+    }
 	
 	return nsamp;
 }
@@ -362,10 +391,16 @@ float* initialiseMDSM(SURVEY* input_survey)
 		outsize *= survey -> nsamp;
     }
 
+    // Calculate output required for folding (per DM)
+    size_t foldedSize = 0;
+    if (survey -> performFolding)
+        for(i = 0; i < survey -> numPeriods; i++)
+            foldedSize += (int) ((survey -> pStart + (survey -> pStep * i)) / survey -> tsamp);
+
     // Initialise buffers and create output buffer (a separate buffer for each GPU output)
     input_buffer = (float *) malloc(*inputsize);
     output_buffer = (float *) malloc(num_devices * outsize * sizeof(float));
-    periodicity_buffer = (float *) malloc(num_devices * outsize * sizeof(float));
+    periodicity_buffer = (float *) malloc(foldedSize * survey -> tdms * sizeof(float));
 
     // Log parameters
     printf("nchans: %d, nsamp: %d, nsubs: %d, npols: %d, tsamp: %f, foff: %f, fch1: %f\n", survey -> nchans, 
@@ -373,10 +408,10 @@ float* initialiseMDSM(SURVEY* input_survey)
     printf("ndms: %d, max dm: %f, maxshift: %d\n", survey -> tdms, hiDM, maxshift);
 
     if (survey -> performFolding)
-        printf("Folding. period: %f, bins: %d\n", survey -> period, (int) (survey -> period / survey -> tsamp));
+        printf("Folding. pStart: %f, pStep: %f, numPeriods: %d\n", survey -> pStart, survey -> pStep, survey -> numPeriods);
 
     if (pthread_barrier_init(&input_barrier, NULL, num_devices + 3))
-        { fprintf(stderr, "Unable to i nitialise input barrier\n"); exit(0); }
+        { fprintf(stderr, "Unable to initialise input barrier\n"); exit(0); }
 
     if (pthread_barrier_init(&output_barrier, NULL, num_devices + 3))
         { fprintf (stderr, "Unable to initialise output barrier\n"); exit(0); }
@@ -405,6 +440,7 @@ float* initialiseMDSM(SURVEY* input_survey)
         periodicity_params.maxiters = 2;
         periodicity_params.output_buffer = periodicity_buffer;
         periodicity_params.dedispersed_size = outsize;
+        periodicity_params.folded_size = foldedSize;
         periodicity_params.stop = 0;
         periodicity_params.rw_lock = &rw_lock;
         periodicity_params.input_barrier = &input_barrier;
@@ -426,9 +462,10 @@ float* initialiseMDSM(SURVEY* input_survey)
         threads_params[k].stop = 0;
         threads_params[k].maxshift = maxshift;
         threads_params[k].dedispersed_size = outsize;
+        threads_params[k].folded_size = foldedSize;
         threads_params[k].binsize = 1;
         threads_params[k].output = &output_buffer[outsize * k];
-        threads_params[k].folded_output = &periodicity_buffer[outsize * k];
+        threads_params[k].folded_output = &periodicity_buffer[foldedSize * (survey -> tdms / num_devices) * k];
         threads_params[k].input = input_buffer;
         threads_params[k].dmshifts = dmshifts;
         threads_params[k].thread_num = k;
