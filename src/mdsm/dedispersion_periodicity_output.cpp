@@ -27,7 +27,7 @@ void create_plot(FILE *fp, OUTPUT_PARAMS *params)
         // Loop over all periods
         for(unsigned j = 0; j < survey -> numPeriods; j++) {
 
-            int bins = round((survey -> pStart + (survey -> pStep * j)) / survey -> tsamp);
+            int bins = (survey -> pStart + (survey -> pStep * j)) / survey -> tsamp;
             float p_bar = FLT_MAX, sigma_bar = 0, max = 0;
             float mean[5] = {0, 0, 0, 0, 0};
 
@@ -101,7 +101,7 @@ void process_periodicity(float *buffer, OUTPUT_PARAMS *params)
         // Loop over all periods
         for(unsigned j = 0; j < survey -> numPeriods; j++) {
 
-            int bins = round((survey -> pStart + (survey -> pStep * j)) / survey -> tsamp);
+            int bins = (survey -> pStart + (survey -> pStep * j)) / survey -> tsamp;
 
             // Add buffer profile to global profile
             for(int k = 0; k < bins; k++)

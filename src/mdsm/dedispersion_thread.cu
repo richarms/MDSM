@@ -367,13 +367,12 @@ void fold(float *d_input, float *d_output, int *d_pShifts, THREAD_PARAMS* params
     // ------------------------------------- Perform folding on GPU --------------------------------------
 
     cudaEventRecord(event_start, 0);
+
     // Calculate shifts for intra-buffer calls
     for(unsigned i = 0; i < survey -> numPeriods; i++) {
         float period = survey -> pStart + survey -> pStep * i;
         float nbins = period / survey -> tsamp;
         pShifts[i] = pPrevDiff[i] == 0 ? 0 : (int) (nbins - pPrevDiff[i]); 
-
-        //TODO FIX THIS BIJATCH
         pPrevDiff[i] = survey -> nsamp - pShifts[i] - round(floor((survey -> nsamp - pShifts[i]) / nbins) * nbins);
     }
 
