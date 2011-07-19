@@ -1,14 +1,12 @@
 #include "DoubleBuffer.h"
-#include "UdpChunker.h"
-#include "Types.h"
-
-#include <QCoreApplication>
+#include "LofarPacketReader.h"
 
 #include "dedispersion_manager.h"
 #include "survey.h"
 
-#include <stdio.h>
+#include <pthread.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #define SQR(x) (x*x)
 
@@ -17,6 +15,9 @@ unsigned sampPerPacket = 1, subsPerPacket = 256,
          sampSize = 16, port = 10000, nPols = 2, sampPerSecond = 78125;
 
 bool writeToDisk = false;
+
+// Pipe
+int pipePointer, pipeId[2];
 
 // Process command-line parameters
 void process_arguments(int argc, char *argv[])
@@ -50,20 +51,75 @@ void process_arguments(int argc, char *argv[])
     }
 }
 
+void *readFromBuffer(void *arg)
+{
+    DoubleBuffer *doubleBuffer = reinterpret_cast<DoubleBuffer *>(arg);
+    char *packet =  (char *) malloc(2048);
+
+    while(1) {
+        read(pipeId[0], packet, 2048);
+        doubleBuffer -> writeData(sampPerPacket, subsPerPacket, reinterpret_cast<float *>(packet), true);
+    }
+
+    return NULL;
+}
+
 // Main method
 int main(int argc, char *argv[])
-{
+{  
+    // Process arguments
+    process_arguments(argc, argv);  
+
+    // Create pipe 
+    pipePointer = pipe(pipeId);
+
+    // Launch separate process to read in packets
+    pid_t pId = fork();
+
+    if (pId == 0)  {
+        // Child process
+        close(pipeId[0]);
+
+        // Initialise packet reader
+        initialiseReader(sampPerPacket, subsPerPacket, nPols, sampPerSecond, 
+                         sampSize, "192.168.9.212", pipeId[1], port);
+
+        // Get pointer to reader thread
+        pthread_t thread = pthread_self();
+
+        // Set reader thread affinity
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        CPU_SET(4, &cpuset);
+
+        if (pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset) != 0)
+            perror("Failed to set thread affinity");
+
+        // Set reader thread scheduling options
+        struct sched_param param;
+        param.sched_priority = 99;
+
+        if (pthread_setschedparam(thread, SCHED_RR, &param) != 0)
+            perror("Failed to set thread scheduling parameters");
+
+        // Start reading in UDP packets
+        sleep(6);
+        run();
+
+    } else if (pId == -1) {
+        perror("Couldn't create child thread");
+        exit(-1);
+    }
+
+    // Parent process proceeds with execution here
+    close(pipeId[1]);
+
     int       chansPerSubband, samples, shift, memSize;
+    unsigned  packetDataSize;
     double    timestamp, sampRate;
     float     *inputBuffer;
     SURVEY    *survey;
-    FILE      *fp = NULL;
-    
-    // Create mait QCoreApplication instance
-    QCoreApplication app(argc, argv);
-
-    // Process arguments
-    process_arguments(argc, argv);   
+    FILE      *fp = NULL;  
     
     // Initialise MDSM
     survey = processSurveyParameters(argv[1]);
@@ -83,22 +139,34 @@ int main(int argc, char *argv[])
     if (writeToDisk) {
         fp = fopen("diskDump.dat", "wb");
     }
-    
-    // Initialise Circular Buffer
+
+    // Initialise Double Buffer
     DoubleBuffer doubleBuffer(samples, survey -> nsubs, nPols);
-    
-    // Initialise UDP Chunker. Data is now being read
-    UDPChunker chunker(port, sampPerPacket, subsPerPacket, nPols, sampPerSecond, sampSize);
-    
+
+    // Create thread which will read incoming data from the pipe
+    pthread_t bufferThread;
+    if (pthread_create(&bufferThread, NULL, readFromBuffer, (void *) &doubleBuffer)) 
+    { perror("Couldn't create buffering thread"); exit(-1); }
+
+    // Set buffering thread affinity
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(5, &cpuset);
+
+    if (pthread_setaffinity_np(bufferThread, sizeof(cpu_set_t), &cpuset) != 0)
+        perror("Failed to set thread affinity");
+
+    // Set reader thread scheduling options
+    struct sched_param param;
+    param.sched_priority = 99;
+
+    if (pthread_setschedparam(bufferThread, SCHED_RR, &param) != 0)
+        perror("Failed to set thread scheduling parameters");
+
     // Temporary store for maxshift
     float *maxshift = (float *) malloc(shift * memSize);
     
-    chunker.setDoubleBuffer(&doubleBuffer);
-    chunker.start();
-    chunker.setPriority(QThread::TimeCriticalPriority);
-    
     // ======================== Store first maxshift =======================
-    // Get pointer to next buffer
     float *udpBuffer = doubleBuffer.prepareRead(&timestamp, &sampRate);
        
     // Copy first maxshift to temporary store
@@ -115,15 +183,15 @@ int main(int argc, char *argv[])
 
         // Copy maxshift to buffer
         memcpy(inputBuffer, maxshift, shift * memSize);
-        
+
         // Copy UDP data to buffer
         memcpy(inputBuffer + shift * survey -> npols * survey -> nsubs, udpBuffer, samples * memSize);
 
         // Copy new maxshift
 	    memcpy(maxshift, udpBuffer + (samples - shift) * nPols * survey -> nsubs, shift * memSize);
-	                
+
         doubleBuffer.readReady();
-        
+
         // Call MDSM for dedispersion
         unsigned int samplesProcessed;
         timestamp -= (survey -> maxshift * chansPerSubband) * sampRate;

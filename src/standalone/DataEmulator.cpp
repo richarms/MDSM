@@ -8,7 +8,7 @@
 typedef std::complex<short> i16complex;
 
 unsigned sampPerPacket = 1, subsPerPacket = 256, 
-         sampSize = 16, port = 10000, nPols = 2, sampPerSecond = 78125;
+         sampSize = 16, port = 9000, nPols = 2, sampPerSecond = 78125;
 
 // -period 20 -width 5 -snrpeak 5 -dm 10 -nbits 16 -nchans 256 -tsamp 12.8 -tobs 300 -fch1 630 -foff 0.09765625
 

@@ -10,11 +10,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define SQR(x) (x * x)
+#define SQR(x) (x*x)
 
 // Global arguments
-unsigned chansPerSubband = 1, sampPerPacket = 1, subsPerPacket = 512, 
-         sampSize = 16, port = 10000, nPols = 2, sampPerSecond = 97656;
+unsigned sampPerPacket = 1, subsPerPacket = 256, 
+         sampSize = 16, port = 10000, nPols = 2, sampPerSecond = 78125;
+
+bool writeToDisk = false;
 
 // Process command-line parameters
 void process_arguments(int argc, char *argv[])
@@ -30,14 +32,10 @@ void process_arguments(int argc, char *argv[])
     }
     
     while(i < argc) {
-       if (!strcmp(argv[i], "-chansPerSubband"))
-           chansPerSubband = atoi(argv[++i]);
-       else if (!strcmp(argv[i], "-sampPerPacket"))
+       if (!strcmp(argv[i], "-sampPerPacket"))
            sampPerPacket = atoi(argv[++i]);
        else if (!strcmp(argv[i], "-subsPerPacket"))
            subsPerPacket = atoi(argv[++i]);
-       else if (!strcmp(argv[i], "-sampSize"))
-           sampSize = atoi(argv[++i]);
        else if (!strcmp(argv[i], "-sampSize"))
            sampSize = atoi(argv[++i]);
        else if (!strcmp(argv[i], "-port"))
@@ -46,6 +44,8 @@ void process_arguments(int argc, char *argv[])
            nPols = atoi(argv[++i]);
        else if (!strcmp(argv[i], "-sampPerSecond"))
            sampPerSecond = atoi(argv[++i]);
+       else if (!strcmp(argv[i], "-dumpData"))
+           writeToDisk = true;
        i++;
     }
 }
@@ -53,11 +53,13 @@ void process_arguments(int argc, char *argv[])
 // Main method
 int main(int argc, char *argv[])
 {
-    unsigned  dataRead = 0, bufferNsamp;
+    int       chansPerSubband, samples, shift, memSize;
+    double    timestamp, sampRate;
     float     *inputBuffer;
     SURVEY    *survey;
+    FILE      *fp = NULL;
     
-     // Create mait QCoreApplication instance
+    // Create mait QCoreApplication instance
     QCoreApplication app(argc, argv);
 
     // Process arguments
@@ -66,74 +68,93 @@ int main(int argc, char *argv[])
     // Initialise MDSM
     survey = processSurveyParameters(argv[1]);
     inputBuffer = initialiseMDSM(survey);
+    chansPerSubband = survey -> nchans / survey -> nsubs;
+    samples = survey -> nsamp * chansPerSubband;
+    shift = survey -> maxshift * chansPerSubband;
+    memSize = survey -> npols * survey -> nsubs * sizeof(float);
+
+    if ((samples - shift) < 0) {
+        printf("Maxshift (%d) must be smaller than nsamp (%d)!!\n", 
+                survey -> maxshift, survey -> nsamp);
+        exit(-1);
+    }
+
+    // If writing to disk, initialise file
+    if (writeToDisk) {
+        fp = fopen("diskDump.dat", "wb");
+    }
     
-    // Initialise Circular Buffer (NOTE: ASSUMING NSAMP > MAXSHIFT!!)
-    bufferNsamp = 65536;
-    DoubleBuffer doubleBuffer(bufferNsamp, survey -> nchans, nPols);
+    // Initialise Circular Buffer
+    DoubleBuffer doubleBuffer(samples, survey -> nsubs, nPols);
     
     // Initialise UDP Chunker. Data is now being read
     UDPChunker chunker(port, sampPerPacket, subsPerPacket, nPols, sampPerSecond, sampSize);
+    
+    // Temporary store for maxshift
+    float *maxshift = (float *) malloc(shift * memSize);
     
     chunker.setDoubleBuffer(&doubleBuffer);
     chunker.start();
     chunker.setPriority(QThread::TimeCriticalPriority);
     
-    // ==================== First iteration removed out of loop... ==============
-    
+    // ======================== Store first maxshift =======================
     // Get pointer to next buffer
-    float *udpBuffer = doubleBuffer.prepareRead();
-    
-    // Process stokes parameters inplace
-    TYPES::i16complex *complexData = reinterpret_cast<TYPES::i16complex *>(udpBuffer);
-        
-    for(unsigned i = 0; i < survey -> maxshift; i++)
-        for(unsigned j = 0; j < survey -> nchans; j++) {
-            TYPES::i16complex X = complexData[(bufferNsamp - survey -> maxshift + i) 
-                                               * survey -> nchans * nPols + j * nPols];
-            TYPES::i16complex Y = complexData[(bufferNsamp - survey -> maxshift + i)
-                                               * survey -> nchans * nPols + j * nPols + 1];
-            inputBuffer[j * (survey -> nsamp + survey -> maxshift) + i] = 
-                SQR(X.real()) + SQR(X.imag()) + SQR(Y.real()) + SQR(Y.imag()); 
-        }
-        
-    dataRead += survey -> maxshift;
+    float *udpBuffer = doubleBuffer.prepareRead(&timestamp, &sampRate);
+       
+    // Copy first maxshift to temporary store
+    memcpy(maxshift, udpBuffer + (samples - shift) * nPols * survey -> nsubs, shift * memSize);
+                     
     doubleBuffer.readReady();
-    // ========================  END OF FIRST ITERATION  ====================
+    // =====================================================================
 
     // Start main processing loop
-    while(true) {      
-	    
-	    // Subsequency iterations, load nsamp values, offset by maxshift
-       while (dataRead + bufferNsamp <= survey -> nsamp + survey -> maxshift) {
+    while(true) {
+        
+        // Get pointer to next buffer
+        float *udpBuffer = doubleBuffer.prepareRead(&timestamp, &sampRate);
 
-           // Get pointer to next buffer
-           udpBuffer = doubleBuffer.prepareRead();
-    
-           // Process stokes parameters inplace
-           TYPES::i16complex *complexData = reinterpret_cast<TYPES::i16complex *>(udpBuffer);
-       
-            for(unsigned i = 0; i < bufferNsamp; i++)
-                for(unsigned j = 0; j < survey -> nchans; j++) {
-                    TYPES::i16complex X = complexData[i * survey -> nchans * nPols + j * nPols];
-                    TYPES::i16complex Y = complexData[i * survey -> nchans * nPols + j * nPols + 1];
-                    inputBuffer[j * (survey -> nsamp + survey -> maxshift) + i] = 
-                        SQR(X.real()) + SQR(X.imag()) + SQR(Y.real()) + SQR(Y.imag());              
-                }
-                    
-            doubleBuffer.readReady();
-            dataRead += bufferNsamp;
-            printf("Intensity loop: %d %d\n", dataRead, survey -> nsamp + survey -> maxshift);
-        }
+        // Copy maxshift to buffer
+        memcpy(inputBuffer, maxshift, shift * memSize);
+        
+        // Copy UDP data to buffer
+        memcpy(inputBuffer + shift * survey -> npols * survey -> nsubs, udpBuffer, samples * memSize);
+
+        // Copy new maxshift
+	    memcpy(maxshift, udpBuffer + (samples - shift) * nPols * survey -> nsubs, shift * memSize);
+	                
+        doubleBuffer.readReady();
         
         // Call MDSM for dedispersion
-        printf("Launching MDSM...\n");
         unsigned int samplesProcessed;
-	    next_chunk(dataRead, samplesProcessed);
-	    
-	    if (!start_processing(dataRead)) {
+        timestamp -= (survey -> maxshift * chansPerSubband) * sampRate;
+	    next_chunk(survey -> nsamp, samplesProcessed, timestamp, sampRate);
+	    if (!start_processing(survey -> nsamp + survey -> maxshift)) {
 	        printf("MDSM stopped....\n");
 	    }
-	    
-	    dataRead = 0;
+
+        // Write to disk if required
+        if (writeToDisk) {
+            short *writeBuffer = reinterpret_cast<short*>(udpBuffer);
+            short *data        = reinterpret_cast<short*>(inputBuffer);
+
+            // Calculate intensities
+            for (int i = 0; i < samples; i++)
+                for (unsigned j = 0; j < subsPerPacket; j++) {
+                    short XvalRe = writeBuffer[i*subsPerPacket*4 + j*2];
+                    short XvalIm = writeBuffer[i*subsPerPacket*4 + j*2 + 1];
+                    short YvalRe = writeBuffer[i*subsPerPacket*4 + subsPerPacket*2];
+                    short YvalIm = writeBuffer[i*subsPerPacket*4 + subsPerPacket*2 + 1];
+                    data[i * subsPerPacket + j] = (SQR(XvalRe) + SQR(XvalIm) + SQR(YvalRe) + SQR(YvalIm));
+                }
+
+            // Write to disk
+            fwrite(data, sizeof(short), samples * subsPerPacket, fp);
+            fflush(fp);
+            printf("Dumped data to disk... \n");
+        }
     } 
+
+    if (writeToDisk) {
+        fclose(fp);
+    }
 }

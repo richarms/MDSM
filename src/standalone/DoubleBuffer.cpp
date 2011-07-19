@@ -35,10 +35,11 @@ void DoubleBuffer::setTimingVariables(double timestamp, double blockrate) {
 // Lock buffer segment for reading
 float *DoubleBuffer::prepareRead(double *timestamp, double *blockrate)
 {
-    // Busy wait for enough data, for now
+    // No full buffers available, return NULL pointer
     while (_fullBuffers < 1)
-        sleep(0.001);
-        
+        sleep(0.1);
+//	return NULL;
+
     // Data available
     _mutex.lock();
     *timestamp = _timestamp + _blockrate * _nsamp * _counter;

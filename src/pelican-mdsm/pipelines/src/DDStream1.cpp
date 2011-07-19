@@ -1,5 +1,6 @@
 #include "DDStream1.h"
 #include "DedispersedDataWriter.h"
+#include "WeightedSpectrumDataSet.h"
 #include <iostream>
 
 DDStream1::DDStream1()
@@ -25,6 +26,7 @@ void DDStream1::init()
     stokes = (SpectrumDataSetStokes*) createBlob("SpectrumDataSetStokes");
     dedispersedData = (DedispersedTimeSeriesF32*) createBlob("DedispersedTimeSeriesF32");
     intStokes = (SpectrumDataSetStokes*) createBlob("SpectrumDataSetStokes");
+    weightedIntStokes = (WeightedSpectrumDataSet*) createBlob("WeightedSpectrumDataSet");
 
     // Request remote data
     requestRemoteData("LofarTimeStream1");
@@ -50,7 +52,8 @@ void DDStream1::run(QHash<QString, DataBlob*>& remoteData)
     ppfChanneliser->run(timeSeries, spectra);
     stokesGenerator->run(spectra, stokes);
     // Clips RFI and modifies blob in place                                                                      
-    rfiClipper->run(stokes);
+    weightedIntStokes->reset(stokes);
+    rfiClipper->run(weightedIntStokes);
 
     mdsm->run(stokes, dedispersedData);
 

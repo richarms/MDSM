@@ -6,6 +6,7 @@
 find_path(PELICAN_LOFAR_INCLUDE_DIR LofarTypes.h
     PATHS
     /usr/local/pelican-lofar/include
+    /usr/local/pelican-lofar/include/pelican-lofar
     /usr/local/pelican-lofar
     /usr/include/
 )

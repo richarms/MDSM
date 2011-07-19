@@ -67,7 +67,7 @@ void UDPChunker::run()
     
          // Wait for datagram to be available.
         while (!_socket -> hasPendingDatagrams())
-            _socket -> waitForReadyRead(1);
+            _socket -> waitForReadyRead(100);
 
         if (_socket->readDatagram(reinterpret_cast<char*>(&currPacket), _packetSize) <= 0) {
             printf("Error while receiving UDP Packet!\n");
@@ -85,7 +85,7 @@ void UDPChunker::run()
             prevSeqid = _startTime = _startTime == 0 ? seqid : _startTime;
             prevBlockid = _startBlockid = _startBlockid == 0 ? blockid : _startBlockid;
             _buffer -> setTimingVariables(seqid + blockid / _samplesPerSecond * 1.0, // timestamp
-                                          1 / (_samplesPerSecond * 1.0));              // blockrate
+                                          1 / (_samplesPerSecond * 1.0));            // blockrate
         }
 
         // Sanity check in seqid. If the seconds counter is 0xFFFFFFFF,
@@ -108,22 +108,20 @@ void UDPChunker::run()
             ++_packetsRejected;
             continue;
         }
-        
-        // Missing packets
+//        
+//        // Missing packets
         else if (diff > _samplesPerPacket) {
             lostPackets = (diff / _samplesPerPacket) - 1;  // -1 since it includes the received packet as well
             fprintf(stderr, "==================== Generated %u empty packets =====================\n", lostPackets);
         }
 
-        // Generate lostPackets empty packets, if any
+//        // Generate lostPackets empty packets, if any
         unsigned packetCounter = 0;
         for (packetCounter = 0; packetCounter < lostPackets; ++packetCounter)
         {
             // Generate empty packet with correct seqid and blockid
             prevSeqid = (prevBlockid + _samplesPerPacket < totBlocks) ? prevSeqid : prevSeqid + 1;
             prevBlockid = (prevBlockid + _samplesPerPacket) % totBlocks;
-//            emptyPacket.header.timestamp = prevSeqid;
-//            emptyPacket.header.blockSequenceNumber = prevBlockid;
             writePacket(emptyPacket);
         }
 
@@ -137,8 +135,8 @@ void UDPChunker::run()
     
         counter ++;
         
-//        if (counter % 1000000 == 0)
-//            printf("====================== Received 1000000 packets ====================\n");
+        if (counter % 100000 == 0)
+            printf("====================== Received 100000 packets ====================\n");
     }
 }
 
