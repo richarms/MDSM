@@ -3,7 +3,7 @@
     <dm lowDM="0" numDMs="512" dmStep="0.1" />
     <channels nchans="512" npols="1" />
     <timing tsamp="0.0000512" />
-    <samples number="65536"/>
+    <samples number="262144"/>
     <detection threshold="5" />
     <output filePrefix="test_multibeam" baseDirectory="." singleFileMode="1" />
     <gpus ids="0,1" />

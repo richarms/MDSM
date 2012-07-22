@@ -26,6 +26,14 @@ detrend:
 	$(NVCC) -o detrend detrend.cu $(LDFLAGS) $(INC) -lfftw3
 	rm -f *.cu.o *.linkinfo
 
+median_filter:
+	$(NVCC) -o median_filter median_filter.cu $(LDFLAGS) $(INC) --ptxas-options=-v --gpu-architecture=sm_20 --use_fast_math
+	rm -f *.cu.o *.linkinfo
+
+mean_stddev:
+	$(NVCC) -o mean_stddev mean_stddev.cu $(LDFLAGS) $(INC) --ptxas-options=-v --gpu-architecture=sm_20 --use_fast_math
+	rm -f *.cu.o *.linkinfo
+
 singlepulse:
 	g++ -o singlepulse singlepulse.cpp -lfftw3f -fopenmp -g \
       -msse4.1 -O3 -ffast-math -fno-exceptions -Wall -ftree-vectorize -fexpensive-optimizations

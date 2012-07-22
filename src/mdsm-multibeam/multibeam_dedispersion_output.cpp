@@ -17,20 +17,25 @@
 // ========================== DETECTION FUNCTIONS ============================
 
 // Process brute force dedispersion if that was chosen
-void process_brute(FILE* output, float *buffer, SURVEY *survey, int read_nsamp, 
-                   double timestamp, double blockRate, time_t start_time)
+void process_brute(FILE* output, float *buffer, SURVEY *survey, float mean, float stddev,
+                   int read_nsamp, double timestamp, double blockRate, time_t start_time)
 {
     unsigned int j, k, l;
     
-    // Calculate the mean and standard deviation
+    // Calculate the mean and standard deviation if not provided externally
     double localmean = 0, localrms = 0, tmp_stddev = 0;
-    for(j = 0; j < read_nsamp * survey -> tdms; j++)
+    if (mean == NULLVALUE && stddev == NULLVALUE)
     {
-        localmean  += buffer[j];
-        tmp_stddev += pow(buffer[j], 2);
+        for(j = 0; j < read_nsamp * survey -> tdms; j++)
+        {
+            localmean  += buffer[j];
+            tmp_stddev += pow(buffer[j], 2);
+        }
+        localmean /= read_nsamp * survey -> tdms;
+        localrms = sqrt(tmp_stddev / (read_nsamp * survey -> tdms) - localmean * localmean);
     }
-    localmean /= read_nsamp * survey -> tdms;
-    localrms = sqrt(tmp_stddev / (read_nsamp * survey -> tdms) - localmean * localmean);
+    else
+        { localmean = mean; localrms = stddev; }
     printf("%d: Mean: %f, Stddev: %f\n", (int) (time(NULL) - start_time), localmean, localrms);
         
     // Subtract DM mean from all samples and apply threshold
@@ -60,6 +65,7 @@ void* process_output(void* output_params)
     time_t start = params -> start, beg_read;
     double pptimestamp = 0, ptimestamp = 0;
     double ppblockRate = 0, pblockRate = 0;
+    float  *mean, *stddev;
 //    long written_samples = 0;
     int ret;
 
@@ -67,6 +73,10 @@ void* process_output(void* output_params)
 
     // Set number of OpenMP threads
     omp_set_num_threads(params -> nthreads);
+
+    // Create local copy of mean and stddev variables
+    mean   = (float *) malloc(params -> nthreads * sizeof(float));
+    stddev = (float *) malloc(params -> nthreads * sizeof(float));
 
     // Create file structures and files
     FILE *fp[survey -> nbeams];
@@ -139,8 +149,9 @@ void* process_output(void* output_params)
                 shared (fp, params, survey, ppnsamp, pptimestamp, ppblockRate, start)
             {
                 unsigned threadId = omp_get_thread_num();
-                process_brute(fp[threadId], (params -> output_buffer)[threadId], survey, ppnsamp,
-                              pptimestamp, ppblockRate, start);
+                process_brute(fp[threadId], (params -> output_buffer)[threadId], survey, 
+                              mean[threadId], stddev[threadId], ppnsamp, pptimestamp, 
+                              ppblockRate, start);
             }
 
             printf("%d: Processed output %d [output]: %d\n", (int) (time(NULL) - start), loop_counter,
@@ -172,7 +183,12 @@ void* process_output(void* output_params)
         pptimestamp = ptimestamp;
         ptimestamp = params -> survey -> timestamp;
         ppblockRate = pblockRate;
-        pblockRate = params -> survey -> blockRate;    
+        pblockRate = params -> survey -> blockRate;  
+        for(i = 0; i < params -> nthreads; i++)
+        {
+            mean[i] = (survey -> global_mean)[i];
+            stddev[i] = (survey -> global_stddev)[i];  
+        }
 
         // Stopping clause
         if (((OUTPUT_PARAMS *) output_params) -> stop) {

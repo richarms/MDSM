@@ -146,13 +146,46 @@ void apply_median_filter(float *d_input, THREAD_PARAMS* params,
                          cudaEvent_t event_start, cudaEvent_t event_stop)
 {
     SURVEY *survey = params -> survey;
-    float timestamp;       
+    unsigned i, tid = params -> thread_num;
+    float timestamp;
 
     cudaEventRecord(event_start, 0);	
 
-    dim3 num_blocks(survey -> nsamp / MEDIAN_THREADS, survey -> tdms); 
-    median_filter<<< num_blocks, MEDIAN_THREADS>>>(d_input, survey -> nsamp);
+    // First we need to calculate the unaltered mean and standard deviation
+    // Allocate CPU and GPU storage for temporary values
+    float2 temp_mean[MEAN_NUM_BLOCKS], *d_temp_mean;
+    CudaSafeCall(cudaMalloc((void **) &d_temp_mean, MEAN_NUM_BLOCKS * sizeof(float2)));
 
+    // Calculate mean and standard deviation on GPU
+    mean_stddev<<< MEAN_NUM_BLOCKS, MEAN_NUM_THREADS>>>
+        (d_input, d_temp_mean, survey -> nsamp * survey -> tdms);
+
+    // Apply median filter on GPU
+    dim3(survey -> nsamp / MEDIAN_THREADS, survey -> tdms); 
+    median_filter<<<dim3(survey -> nsamp / MEDIAN_THREADS, survey -> tdms), MEDIAN_THREADS>>>
+                   (d_input, survey -> nsamp);
+
+    // Whilst GPU is busy processing, copy results from mean_stddev from GPU and
+    // calculate global value
+    CudaSafeCall(cudaMemcpy(temp_mean, d_temp_mean, MEAN_NUM_BLOCKS * sizeof(float2), 
+                 cudaMemcpyDeviceToHost));
+
+    i = 0;
+    while (i < MEAN_NUM_BLOCKS)
+    {
+        temp_mean[0].x += temp_mean[i].x;
+        temp_mean[0].y += temp_mean[i].y;
+        i++;
+    }
+
+    (survey -> global_mean)[tid]   = temp_mean[0].x / (survey -> nsamp * survey -> tdms);
+    (survey -> global_stddev)[tid] = sqrt(temp_mean[0].y / (survey -> nsamp * survey -> tdms)) - 
+                                          pow((survey -> global_mean)[tid], 2);
+
+    // Free GPU-allocated space
+    CudaSafeCall(cudaFree(d_temp_mean));
+
+    // All processing ready, wait for kernel execution
     cudaEventRecord(event_stop, 0);
     cudaEventSynchronize(event_stop);
     cudaEventElapsedTime(&timestamp, event_start, event_stop);
@@ -184,6 +217,9 @@ void* dedisperse(void* thread_params)
     // Set CUDA kernel preferences
     CudaSafeCall(cudaFuncSetCacheConfig(cache_dedispersion, cudaFuncCachePreferL1 ));
     CudaSafeCall(cudaFuncSetCacheConfig(median_filter, cudaFuncCachePreferShared ));
+
+    // Initialise survey parameters
+    (params -> survey -> global_mean)[tid] = (params -> survey -> global_stddev)[tid] = NULLVALUE;
 
     // Initialise events / performance timers
     cudaEvent_t event_start, event_stop;

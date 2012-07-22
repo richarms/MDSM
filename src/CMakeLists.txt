@@ -27,7 +27,7 @@ if(NOT BINARY_INSTALL_DIR)
 endif(NOT BINARY_INSTALL_DIR)
 
 if(NOT GPU_VERSION_ARCHITECTURE)
-    set(GPU_ARCHITECTURE "sm_13")
+    set(GPU_ARCHITECTURE "sm_20")
 endif(NOT GPU_VERSION_ARCHITECTURE)
 
 
@@ -66,6 +66,7 @@ include_directories(${PELICAN_INCLUDE_DIR})
 
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/mdsm")
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/mdsm-coherent")
+include_directories("${CMAKE_CURRENT_SOURCE_DIR}/mdsm-multibeam")
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/pelican-mdsm/modules")
 include_directories(${QT_QTXML_INCLUDE_DIR})
 include_directories(${QT_QTCORE_INCLUDE_DIR})
@@ -80,6 +81,11 @@ target_link_libraries(standalone-mdsm
     ${QT_QTCORE_LIBRARY}
     ${PELICAN_LOFAR_LIBRARIES}
     ${PELICAN_LIBRARIES}
-    mdsm-cuda
-    mdsm
+    mdsm-multibeam-cuda
+    mdsm-multibeam
+)
+
+set_target_properties(standalone-mdsm PROPERTIES
+    COMPILE_FLAGS "${OpenMP_CXX_FLAGS}"
+    LINK_FLAGS "${OpenMP_CXX_FLAGS}"
 )

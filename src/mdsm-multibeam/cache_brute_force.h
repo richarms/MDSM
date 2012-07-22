@@ -7,4 +7,7 @@
 
 #define MEDIAN_WIDTH    5
 #define MEDIAN_THREADS  256
+
+#define MEAN_NUM_BLOCKS  512
+#define MEAN_NUM_THREADS 256 
 #endif

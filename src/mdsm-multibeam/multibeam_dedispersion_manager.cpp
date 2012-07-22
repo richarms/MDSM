@@ -258,6 +258,10 @@ float* initialiseMDSM(SURVEY* input_survey)
     for (i=0; i < survey -> nbeams; i++)
         output_buffer[i] = (float *) malloc(outsize * sizeof(float));
 
+    // Allocate mean and stddev buffer in survey
+    survey -> global_stddev = (float *) malloc(survey -> nbeams * sizeof(float));
+    survey -> global_mean = (float *) malloc(survey -> nbeams * sizeof(float));
+
     // Log parameters
     printf("Observation Params: ndms = %d, maxDM = %f\n", survey -> tdms, 
                 survey -> lowdm + survey -> dmstep * (survey -> tdms - 1));
@@ -364,6 +368,9 @@ void tearDownMDSM()
 
     free(threads_params);
     free(threads);
+        
+    free(survey -> global_mean);
+    free(survey -> global_stddev);
 
     // TODO: Clear pinned memory and beams 
 

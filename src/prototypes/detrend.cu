@@ -96,7 +96,7 @@ __global__ void detrend_normalise(float *input, int detrendLen)
 
 	for (unsigned i = threadIdx.x; i < detrendLen ; i += blockDim.x)
 		input[blockIdx.y * gridDim.x * detrendLen + 
-			  blockIdx.x * detrendLen + i]        /= stddev;
+			  blockIdx.x * detrendLen + i]   /= stddev;
 }
 
 // --------------------------- Main processing  ----------------------------

@@ -3,6 +3,8 @@
 
 #include "stdio.h"
 
+#define NULLVALUE -999
+
 typedef struct 
 {
     // Beam parameters
@@ -41,6 +43,7 @@ typedef struct {
     char      use_pc_time, single_file_mode;
 
     // Detection parameters
+    float *global_mean, *global_stddev;
     float detection_threshold;
 
     // Number of GPUs which are used

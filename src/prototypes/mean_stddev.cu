@@ -5,11 +5,10 @@
 #include <float.h>
 #include "time.h"
 
-#define NUM_THREADS 512
-#define MEDIAN_WIDTH 5
-#define NUM_BLOCKS  32
+#define NUM_THREADS 256
+#define NUM_BLOCKS  512
 
-int nsamp = 262144 * 32;
+int nsamp = 65536 * 1024 * 4;
 
 __global__ void mean_stddev(float *input, float2 *stddev, const int nsamp)
 {
@@ -18,7 +17,8 @@ __global__ void mean_stddev(float *input, float2 *stddev, const int nsamp)
     __shared__ float local_stddev[NUM_THREADS];
 
     // Initialise shared memory
-    local_mean[threadIdx.x] = local_stddev[threadIdx.x] = 0;
+    local_stddev[threadIdx.x] = 0;
+    local_mean[threadIdx.x]   = 0;
 
     // Synchronise threads
     __syncthreads();
@@ -29,29 +29,30 @@ __global__ void mean_stddev(float *input, float2 *stddev, const int nsamp)
                  s += blockDim.x * gridDim.x)
     {
         float val = input[s];
-        local_mean[threadIdx.x] += val;
-        local_stddev[threadIdx.x] += val * val;
+        local_stddev[threadIdx.x] += (val * val);
+        local_mean[threadIdx.x]   += val; 
     }
+
+    // Synchronise threads
+    __syncthreads();
 
     // Use reduction to calculate block mean and stddev
 	for (unsigned i = NUM_THREADS / 2; i >= 1; i /= 2)
 	{
 		if (threadIdx.x < i)
 		{
-            local_mean[threadIdx.x] += local_mean[threadIdx.x + i];
-            local_stddev[threadIdx.x] += __powf(local_stddev[threadIdx.x + i], 2);
+            local_stddev[threadIdx.x] += local_stddev[threadIdx.x + i];
+            local_mean[threadIdx.x]   += local_mean[threadIdx.x + i];
 		}
 		
 		__syncthreads();
 	}
 
     // Finally, return temporary standard deviation value
-    float2 def = {1,2};
     if (threadIdx.x == 0)
     {
         float2 vals = { local_mean[0], local_stddev[0] };
-        stddev[blockIdx.x] = def;//vals;
- printf("%d done %f %f\n", blockIdx.x, vals.x, vals.y);
+        stddev[blockIdx.x] = vals;
     }
 }
 
@@ -70,7 +71,7 @@ int main(int argc, char *argv[])
     cudaMallocHost((void **) &stddev, NUM_BLOCKS * sizeof(float2));
 
     for(j = 0; j < nsamp; j++)
-        input[j] = 5;
+        input[j] = rand() % 50;
 
 	printf("Number of samples: %d\n", nsamp);
 
@@ -82,7 +83,7 @@ int main(int argc, char *argv[])
 	// Allocate GPU memory and copy data
     cudaEventRecord(event_start, 0);
 	cudaMalloc((void **) &d_input, nsamp * sizeof(float) );
-	cudaMalloc((void **) &d_stddev, NUM_BLOCKS * sizeof(float) );
+	cudaMalloc((void **) &d_stddev, NUM_BLOCKS * sizeof(float2) );
     cudaMemcpy(d_input, input, nsamp * sizeof(float), cudaMemcpyHostToDevice);
     cudaEventRecord(event_stop, 0);
 	cudaEventSynchronize(event_stop);
@@ -91,7 +92,6 @@ int main(int argc, char *argv[])
 
 	// Call kernel
 	cudaEventRecord(event_start, 0);
-    printf("blocks: %d, threads: %d\n", NUM_BLOCKS, NUM_THREADS);
     mean_stddev<<<NUM_BLOCKS, NUM_THREADS>>>(d_input, d_stddev, nsamp);
 	cudaEventRecord(event_stop, 0);
 	cudaEventSynchronize(event_stop);
@@ -106,9 +106,8 @@ int main(int argc, char *argv[])
     float mean = 0, std = 0;
     for(i = 0; i < NUM_BLOCKS; i++)
     {
-        printf("%f %f\n", stddev[i].x, stddev[i].y);
         mean += stddev[i].x;
-        std  += pow(stddev[i].y, 2);
+        std  += stddev[i].y;
     }
     mean /= nsamp;
     std   = sqrt((std / nsamp)- mean * mean);

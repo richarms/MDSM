@@ -103,4 +103,51 @@ __global__ __device__ void median_filter(float *input, const int nsamp)
     }
 }
 
+// ------------ Calculate Mean and Standard Deviation -------------------
+__global__ void mean_stddev(float *input, float2 *stddev, const int nsamp)
+{
+    // Declare shared memory to store temporary mean and stddev
+    __shared__ float local_mean[MEAN_NUM_THREADS];
+    __shared__ float local_stddev[MEAN_NUM_THREADS];
+
+    // Initialise shared memory
+    local_stddev[threadIdx.x] = 0;
+    local_mean[threadIdx.x]   = 0;
+
+    // Synchronise threads
+    __syncthreads();
+
+    // Loop over samples
+    for(unsigned s = threadIdx.x + blockIdx.x * blockDim.x; 
+                 s < nsamp; 
+                 s += blockDim.x * gridDim.x)
+    {
+        float val = input[s];
+        local_stddev[threadIdx.x] += (val * val);
+        local_mean[threadIdx.x]   += val; 
+    }
+
+    // Synchronise threads
+    __syncthreads();
+
+    // Use reduction to calculate block mean and stddev
+	for (unsigned i = MEAN_NUM_THREADS / 2; i >= 1; i /= 2)
+	{
+		if (threadIdx.x < i)
+		{
+            local_stddev[threadIdx.x] += local_stddev[threadIdx.x + i];
+            local_mean[threadIdx.x]   += local_mean[threadIdx.x + i];
+		}
+		
+		__syncthreads();
+	}
+
+    // Finally, return temporary standard deviation value
+    if (threadIdx.x == 0)
+    {
+        float2 vals = { local_mean[0], local_stddev[0] };
+        stddev[blockIdx.x] = vals;
+    }
+}
+
 #endif
