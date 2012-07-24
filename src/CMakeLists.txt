@@ -57,7 +57,7 @@ find_package(Qt4 COMPONENTS QtCore QtNetwork QtXml REQUIRED)
 find_package(PelicanLofar REQUIRED)
 find_package(OpenMP REQUIRED)
 find_package(FFTW3 REQUIRED)
-find_package(PGPLOT REQUIRED)
+#find_package(PGPLOT REQUIRED)
 
 include_directories("${CUDA_SDK_ROOT_DIR}/common/inc")
 include_directories(${CUDA_INCLUDE_DIRS})

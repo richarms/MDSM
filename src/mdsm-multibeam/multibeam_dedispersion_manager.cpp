@@ -1,6 +1,7 @@
 #include "multibeam_dedispersion_output.h"
 #include "multibeam_dedispersion_thread.h"
 #include "unistd.h"
+#include "stdlib.h"
 
 // QT stuff
 #include <QFile>

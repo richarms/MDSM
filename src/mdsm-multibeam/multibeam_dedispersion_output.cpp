@@ -36,6 +36,7 @@ void process_brute(FILE* output, float *buffer, SURVEY *survey, float mean, floa
     }
     else
         { localmean = mean; localrms = stddev; }
+
     printf("%d: Mean: %f, Stddev: %f\n", (int) (time(NULL) - start_time), localmean, localrms);
         
     // Subtract DM mean from all samples and apply threshold
