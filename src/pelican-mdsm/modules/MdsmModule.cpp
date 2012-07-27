@@ -1,6 +1,6 @@
 // MDSM stuff
 #include "MdsmModule.h"
-#include "DedispersedSeries.h"
+//#include "DedispersedSeries.h"
 #include "dedispersion_manager.h"
 
 // Pelican stuff
@@ -46,12 +46,9 @@ void MdsmModule::run(DataBlob* incoming, DedispersedTimeSeriesF32* dedispersedDa
     WeightedSpectrumDataSet* weightedData;
     SpectrumDataSet<float>*  streamData;
 
-    // If incoming data blob is of type WeightedSpectrumDataSet, then we will forward the mean and rms
-    // value per chunk to MDSM. Get the mean and rms per chunk from the datablob
+    // Check incoming blob's datatype
     if ( (weightedData = (WeightedSpectrumDataSet*) dynamic_cast<WeightedSpectrumDataSet*>(incoming))) 
-    {        
         streamData = weightedData -> dataSet();
-    }
 
     else if ((spectrumData = (SpectrumDataSetStokes*) dynamic_cast<SpectrumDataSetStokes*> (incoming)))
     {
@@ -61,7 +58,7 @@ void MdsmModule::run(DataBlob* incoming, DedispersedTimeSeriesF32* dedispersedDa
     else
         throw QString("MDSM: No useful datablob");
     
-    unsigned nSamples, nSubbands, nChannels, reqSamp, copySamp;
+    unsigned nSamples, nSubbands, nChannels, copySamp;
     nSamples = streamData -> nTimeBlocks();
     nSubbands = streamData -> nSubbands();
     nChannels = (nSamples == 0) ? 0 : streamData -> nChannels();
@@ -73,19 +70,13 @@ void MdsmModule::run(DataBlob* incoming, DedispersedTimeSeriesF32* dedispersedDa
     if (_gettime == 0) {
         _timestamp = streamData -> getLofarTimestamp();
         _blockRate = streamData -> getBlockRate();
-
-        if (_counter > 0)
-            _timestamp = streamData -> getLofarTimestamp() - _blockRate * _survey -> maxshift;
     }
 
-    // Calculate number of required samples
-    reqSamp = _counter == 0 ? _survey -> nsamp + _survey -> maxshift : _survey -> nsamp;
-
     // Check to see whether all samples will fit in memory
-    copySamp = nSamples <= reqSamp - _samples ? nSamples : reqSamp - _samples;
+    copySamp = nSamples <= _survey -> nsamp - _samples ? nSamples : _survey -> nsamp - _samples;
    
     // Check if we reached the end of the stream, in which case we clear the MDSM buffers
-    if (nSamples == 0) { reqSamp = 0; copySamp = 0; }
+    if (nSamples == 0) copySamp = 0;
 
     // NOTE: we always care about the first Stokes parameter (XX)
     for(unsigned t = 0; t < copySamp; t++) {
@@ -96,13 +87,11 @@ void MdsmModule::run(DataBlob* incoming, DedispersedTimeSeriesF32* dedispersedDa
          
                 // Corner turn whilst copying data to MDSM
                 if (_counter == 0)
-                    _input_buffer[s * nChannels * (_survey -> nsamp + _survey -> maxshift)
-                                  + c * (_survey -> nsamp + _survey -> maxshift)
+                    _input_buffer[s * nChannels * _survey -> nsamp + c * _survey -> nsamp
                                   + (_samples + t)] = data[(_invertChannels) ? nChannels - 1 - c : c];
                 else
-                    _input_buffer[s * nChannels * (_survey -> nsamp + _survey -> maxshift)
-                                  + c * (_survey -> nsamp + _survey -> maxshift)
-                                  + _survey -> maxshift + _samples + t] = data[(_invertChannels) ? nChannels - 1 - c : c];
+                    _input_buffer[s * nChannels * _survey -> nsamp + c * _survey -> nsamp
+                                  + _samples + t] = data[(_invertChannels) ? nChannels - 1 - c : c];
         }
     }
 
@@ -110,16 +99,13 @@ void MdsmModule::run(DataBlob* incoming, DedispersedTimeSeriesF32* dedispersedDa
     _gettime = _samples;
 
     // We have enough samples to pass to MDSM
-    if (_samples == reqSamp || nSamples == 0) {
+    if (_samples == _survey -> nsamp || nSamples == 0) {
 
         // Copy this chunk and get previous output
-        unsigned int numSamp;
         unsigned samples;
-        
-        numSamp = (_counter == 0) ? _samples - _survey -> maxshift : _samples;
 
         // Notify MDSM of next processable chunk
-        float *outputBuffer = next_chunk(numSamp, samples, _timestamp, _blockRate);
+        float *outputBuffer = next_chunk(_survey -> nsamp, samples, _timestamp, _blockRate);
 
         // Copy remaining samples (if any) to MDSM input buffer
         _gettime = _samples;
@@ -129,41 +115,14 @@ void MdsmModule::run(DataBlob* incoming, DedispersedTimeSeriesF32* dedispersedDa
         
             // Output available, create data blob
             dedispersedData -> resize(_survey -> tdms);
-            if (_survey -> useBruteForce) {
 
-                // All DMs have same number of samples
-                DedispersedSeries<float>* data;
-                for (unsigned d = 0; d < _survey -> tdms; d++) {
-                    data  = dedispersedData -> samples(d);
-                    data -> resize(samples);
-                    data -> setDmValue(_survey -> lowdm + _survey -> dmstep * d);
-                    memcpy(data -> ptr(), &outputBuffer[d * samples], samples * sizeof(float));
-                }
-            }
-            else {
-                // Number of samples differs among passes
-                DedispersedSeries<float>* data;
-                unsigned totdms = 0, shift = 0; 
-                for (unsigned thread = 0; thread < _survey -> num_threads; thread++) {
-                    for(unsigned pass = 0; pass < _survey -> num_passes; pass++) {
-                        unsigned ndms = (_survey -> pass_parameters[pass].ncalls / _survey -> num_threads) 
-                                       * _survey -> pass_parameters[pass].calldms;
-
-                        float startdm = _survey -> pass_parameters[pass].lowdm + _survey -> pass_parameters[pass].sub_dmstep 
-                                        * (_survey -> pass_parameters[pass].ncalls / _survey -> num_threads) * thread;
-                        float dmstep  = _survey -> pass_parameters[pass].dmstep;
-
-                        unsigned nsamp = samples / _survey -> pass_parameters[pass].binsize;
-                        for(unsigned dm = 0; dm < ndms; dm++) {
-                            data = dedispersedData -> samples(totdms + dm);
-                            data -> resize(nsamp);
-                            data -> setDmValue(startdm + dm * dmstep);
-                            memcpy(data -> ptr(), &outputBuffer[shift], nsamp * sizeof(float));
-                            shift += nsamp;
-                        }
-                        totdms += ndms;
-                    }   
-                }
+            // All DMs have same number of samples
+            DedispersedSeries<float>* data;
+            for (unsigned d = 0; d < _survey -> tdms; d++) {
+                data  = dedispersedData -> samples(d);
+                data -> resize(samples);
+                data -> setDmValue(_survey -> lowdm + _survey -> dmstep * d);
+                memcpy(data -> ptr(), &outputBuffer[d * samples], samples * sizeof(float));
             }
         }
         else
@@ -178,11 +137,9 @@ void MdsmModule::run(DataBlob* incoming, DedispersedTimeSeriesF32* dedispersedDa
             for (unsigned s = 0; s < nSubbands; s++) {
                 data = streamData -> spectrumData(t, (_invertChannels) ? nSubbands - 1 - s : s, 0);
                 for(unsigned c = 0 ; c < nChannels ; ++c)
-                  // Corner turn whilst copying data to 
-                    _input_buffer[s * nChannels * (_survey -> nsamp + _survey -> maxshift)
-                                + c * (_survey -> nsamp + _survey -> maxshift)
-                                + _survey -> maxshift + _samples + t] = data[(_invertChannels) ? nChannels - 1 - c : c];
-
+                    // Corner turn whilst copying data to 
+                    _input_buffer[s * nChannels * _survey -> nsamp + c * _survey -> nsamp
+                                  + _samples + t] = data[(_invertChannels) ? nChannels - 1 - c : c];
             }
         }
         _samples += nSamples - copySamp;

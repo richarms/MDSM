@@ -218,9 +218,6 @@ void* dedisperse(void* thread_params)
     CudaSafeCall(cudaFuncSetCacheConfig(cache_dedispersion, cudaFuncCachePreferL1 ));
     CudaSafeCall(cudaFuncSetCacheConfig(median_filter, cudaFuncCachePreferShared ));
 
-    // Initialise survey parameters
-    (params -> survey -> global_mean)[tid] = (params -> survey -> global_stddev)[tid] = NULLVALUE;
-
     // Initialise events / performance timers
     cudaEvent_t event_start, event_stop;
     float timestamp;
@@ -271,6 +268,9 @@ void* dedisperse(void* thread_params)
 
             // Clear GPU output buffer
             CudaSafeCall(cudaMemset(d_output, 0, params -> outputsize));
+
+            // Reset global mean/stddev
+            (params -> survey -> global_mean)[tid] = (params -> survey -> global_stddev)[tid] = NULLVALUE;
         }
 
         // Wait input barrier
@@ -285,7 +285,8 @@ void* dedisperse(void* thread_params)
 		    cached_brute_force(d_input, d_output, d_dmshifts, params, event_start, event_stop, beam.maxshift);
 
             // Apply median-filter
-            apply_median_filter(d_output, params, event_start, event_stop);
+            if (params -> survey -> apply_median_filter)
+                apply_median_filter(d_output, params, event_start, event_stop);
         }
 
         // Wait output barrier

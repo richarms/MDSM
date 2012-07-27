@@ -122,8 +122,10 @@ SURVEY* processSurveyParameters(QString filepath)
                 survey -> tsamp = e.attribute("tsamp").toFloat();
             else if (QString::compare(e.tagName(), QString("samples"), Qt::CaseInsensitive) == 0)
 			   survey -> nsamp = e.attribute("number").toUInt();
-            else if (QString::compare(e.tagName(), QString("detection"), Qt::CaseInsensitive) == 0)
+            else if (QString::compare(e.tagName(), QString("detection"), Qt::CaseInsensitive) == 0) {
 			   survey -> detection_threshold = e.attribute("threshold").toFloat();
+               survey -> apply_median_filter = e.attribute("applyMedianFilter").toUInt();
+            }
             else if (QString::compare(e.tagName(), QString("output"), Qt::CaseInsensitive) == 0) {
                 char *temp = e.attribute("filePrefix", "output").toUtf8().data();
 			    strcpy(survey -> fileprefix, temp);
@@ -247,17 +249,16 @@ float* initialiseMDSM(SURVEY* input_survey)
     size_t outsize = outputsize / sizeof(float);
 
     // Create memory-pinned CPU buffers (holds input for all beams)
-//    call_allocateInputBuffer(&input_buffer, survey -> nbeams * survey -> nsamp * survey -> nchans * sizeof(float));
+    call_allocateInputBuffer(&input_buffer, survey -> nbeams * survey -> nsamp * survey -> nchans * sizeof(float));
 
     // Output buffer (one for each beam)
-//    output_buffer = (float **) malloc(survey -> nbeams * sizeof(float *));
-//    for(i = 0; i < survey -> nbeams; i++)
-//        call_allocateOutputBuffer(&(output_buffer[i]), outsize * sizeof(float));
-
-    input_buffer = (float *) malloc(survey -> nbeams * survey -> nsamp * survey -> nchans * sizeof(float));
     output_buffer = (float **) malloc(survey -> nbeams * sizeof(float *));
-    for (i=0; i < survey -> nbeams; i++)
-        output_buffer[i] = (float *) malloc(outsize * sizeof(float));
+    for(i = 0; i < survey -> nbeams; i++)
+        call_allocateOutputBuffer(&(output_buffer[i]), outsize * sizeof(float));
+
+//    output_buffer = (float **) malloc(survey -> nbeams * sizeof(float *));
+//    for (i=0; i < survey -> nbeams; i++)
+//        output_buffer[i] = (float *) malloc(outsize * sizeof(float));
 
     // Allocate mean and stddev buffer in survey
     survey -> global_stddev = (float *) malloc(survey -> nbeams * sizeof(float));

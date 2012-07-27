@@ -1,11 +1,6 @@
 #ifndef SPEADBEAMCHUNKER_H
 #define SPEADBEAMCHUNKER_H
 
-#include "pelican/server/AbstractChunker.h"
-
-#include <QtCore/QString>
-#include <QtCore/QObject>
-
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -100,67 +95,46 @@
     (((uint8_t *)data)[0] << off) | (((uint8_t *)data)[1] >> (8*sizeof(uint8_t) - off)))
 
 
-/**
- * @file LofarChunker.h
- */
+#include "DoubleBuffer.h"
+#include <QtCore/QString>
+#include <QtCore/QObject>
+#include <QUdpSocket>
+#include <QThread>
+#include <iostream>
 
 using namespace std;
 
-namespace pelican {
-namespace lofar {
-
-class DataManager;
-
-
-/**
- * @class SpeadBeamChunker
- *
- * @ingroup pelican_lofar
- *
- * @brief
- * Implementation of an AbstractChunker to monitor calling.
- *
- * @details
- *
- */
-class SpeadBeamChunker : public AbstractChunker
+class SpeadBeamChunker: public QThread
 {
-
     public:
-        /// Constructs a new LofarChunker.
-        SpeadBeamChunker(const ConfigNode&);
+        SpeadBeamChunker(unsigned port, unsigned nBeams, unsigned nSubbands, unsigned nSpectra, 
+                         unsigned samplesPerSecond, unsigned packetsPerHeap);
+        ~SpeadBeamChunker();
+        
+        // Set double buffer pointer
+        void setDoubleBuffer(DoubleBuffer *buffer);
 
-        /// Destroys the LofarChunker.
-        ~SpeadBeamChunker() { }
-
-        /// Creates the socket to use for the incoming data stream.
-        virtual QIODevice* newDevice();
-
-        /// Process next heap
-        virtual void next(QIODevice*);
+        // Start reading UDP packets
+        virtual void run();
+        
+    private:
+        /// Generates an empty UDP packet.
+        void connectDevice(unsigned port);
 
     private:
-        /// Write Heap to writeableData object
-        void writePacket(WritableData *writer, char *data, unsigned size, unsigned offset);
+        DoubleBuffer   *_buffer;
+        QUdpSocket     *_socket;
 
-    private:
-
-        unsigned _packetsPerHeap;
+        // Heap buffer
+        char     *_heap;
         unsigned _samplesPerSubband;
-        unsigned _bitsPerSample;
         unsigned _subbandsPerHeap;
         unsigned _numberOfBeams;
-        unsigned _currHeapNumber;
-
-        // Temporary packet store;
-        char     *_packet;
-        unsigned _numPackets;  
-        bool     _hasPendingPacket;
+        unsigned _samplesPerSecond;
+        unsigned _startTime;
+        unsigned _startBlockid;
+        unsigned _packetsPerHeap;
+        unsigned _heapSize;
 };
 
-PELICAN_DECLARE_CHUNKER(SpeadBeamChunker)
-
-} // namespace lofar
-} // namespace pelican
-
-#endif // SPEADBEAMCHUNKER_H
+#endif // SPEAD_BEAM_CHUNKER_H

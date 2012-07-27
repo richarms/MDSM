@@ -27,9 +27,13 @@ if(NOT BINARY_INSTALL_DIR)
 endif(NOT BINARY_INSTALL_DIR)
 
 if(NOT GPU_VERSION_ARCHITECTURE)
-    set(GPU_ARCHITECTURE "sm_20")
+    set(GPU_ARCHITECTURE "sm_13")
 endif(NOT GPU_VERSION_ARCHITECTURE)
 
+# === Compiler dependancies if compiler is GCC
+if(CMAKE_COMPILER_IS_GNUCXX)
+    set(CMAKE_CXX_FLAGS "-O3 -fexpensive-optimizations")
+endif()
 
 # === Find dependencies.
 if(NOT CUDA_SDK_ROOT_DIR)
@@ -70,6 +74,7 @@ include_directories("${CMAKE_CURRENT_SOURCE_DIR}/mdsm-multibeam")
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/pelican-mdsm/modules")
 include_directories(${QT_QTXML_INCLUDE_DIR})
 include_directories(${QT_QTCORE_INCLUDE_DIR})
+include_directories(${QT_QTNETWORK_INCLUDE_DIR})
 include_directories(${QT_INCLUDE_DIR})
 include_directories(${PGPLOT_INCLUDE_DIRS})
 

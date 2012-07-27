@@ -82,13 +82,16 @@ if __name__ == "__main__":
 
             plt.show()
 
-#        elif argv[3] == '3d' or argv[3] == '3D':
-#            fig = plt.figure()
-#            ax = Axes3D(fig)
-#            ax.scatter(np.array(data[0]), np.array(data[1]), np.array(data[2]),'ro')
-#            ax.set_xlabel('Time')
-#            ax.set_ylabel('DM')
-#            ax.set_zlabel('Intensity')
+        # Plot Intensity vs DM contour
+        elif argv[3] == 'contour':
+            H, xedges, yedges = np.histogram2d(data[2], data[1], (64,64))
+            extent = [yedges[-1], yedges[0], xedges[0], xedges[-1]]
+            plt.contourf(H, extent=extent)
+            plt.show()
+#            plt.imshow(H, extent=extent, interpolation='nearest', aspect='auto')
+#            plt.colorbar()
+#            plt.xlabel("DM")
+#            plt.ylabel("Intensity")
 #            plt.show()
 
         else:

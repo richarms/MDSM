@@ -45,6 +45,7 @@ typedef struct {
     // Detection parameters
     float *global_mean, *global_stddev;
     float detection_threshold;
+    bool  apply_median_filter;
 
     // Number of GPUs which are used
     unsigned num_threads;
