@@ -73,15 +73,17 @@ test_atomic:
 	rm -f *.cu.o *.linkinfo
 
 coherent_dedisp:
-#	$(NVCC) -c coherent_dedisp.cu $(INC) --use_fast_math --gpu-architecture sm_13 -I/usr/local/pgplot/
 	$(NVCC) -c coherent_dedisp.cu $(INC) --use_fast_math --gpu-architecture sm_13 -I/usr/local/pgplot/  
 	gfortran -o coherent coherent_dedisp.o $(LDFLAGS) -L/lib -lcufft -L/usr/local/pgplot -lcpgplot -lpgplot -lgfortran -L/usr/X11R6/lib -lX11
 	rm -f *.cu.o *.linkinfo
-
 
 fft_shift:
 	$(NVCC) -c fftShift.cu $(INC) --use_fast_math --gpu-architecture sm_13 -I/usr/local/pgplot/  
 	gfortran -o fftShift fftShift.o $(LDFLAGS) -L/lib -lcufft -L/usr/local/pgplot -lcpgplot -lpgplot -lgfortran -L/usr/X11R6/lib -lX11
 	rm -f *.cu.o *.linkinfo
+
+heap_test:
+	$(CCC) -o heap_test heap_memory_copy_sse.c -O2
+	rm -f *.o
 
 ################################################################################

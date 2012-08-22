@@ -66,7 +66,7 @@ function varargout = DedispersionPipelineSimulator_OutputFcn(hObject, eventdata,
 % Get default command line output from handles structure
 varargout{1} = handles.output;
 
-
+% ----------------------- GLOBAL CALLBACKS --------------------------
 
 % --------------------------------------------------------------------
 function menu_open_Callback(hObject, eventdata, handles)
@@ -79,6 +79,14 @@ function menu_exit_Callback(hObject, eventdata, handles)
 
 close()
 
+% --------------------------------------------------------------------
+function detach_axes_ClickedCallback(hObject, eventdata, handles)
+
+figure; % Open a new figure with handle f1
+h = gca();
+copyobj(allchild(handles.axes2), h); % Copy axes object h into figure f1
+
+% ----------------------- ACTION CALLBACKS --------------------------
 
 % --- Executes on button press in generate_signal_button.
 function generate_signal_button_Callback(hObject, eventdata, handles)
@@ -91,6 +99,7 @@ set(handles.axes3, 'Visible', 'off');
 set(handles.generate_signal_panel, 'Visible', 'on');
 set(handles.channelisation_panel, 'Visible', 'off');
 set(handles.dedispersion_panel, 'Visible', 'of');
+set(handles.post_processing_panel, 'Visible', 'off');
 
 % If signal has been generated, plot
 if getappdata(handles.generate_signal_button, 'signal_generated') == 1
@@ -127,6 +136,7 @@ set(handles.axes3, 'Visible', 'off');
 set(handles.generate_signal_panel, 'Visible', 'off');
 set(handles.dedispersion_panel, 'Visible', 'of');
 set(handles.channelisation_panel, 'Visible', 'on');
+set(handles.post_processing_panel, 'Visible', 'off');
 
 % If signal has already been channelised
 if size(getappdata(handles.main, 'channelised_voltage'), 2) ~= 0
@@ -153,22 +163,11 @@ set(handles.axes3, 'Visible', 'off');
 set(handles.dedispersion_panel, 'Visible', 'on');
 set(handles.generate_signal_panel, 'Visible', 'off');
 set(handles.channelisation_panel, 'Visible', 'off');
+set(handles.post_processing_panel, 'Visible', 'off');
 
 % If signal has been generated, plot
-if getappdata(handles.generate_signal_button, 'dedispersed_series') == 1
-    
-%     voltage = getappdata(handles.main, 'voltage');
-%     transients = getappdata(handles.main, 'transients');
-%     axes(handles.axes2);
-%     specgram(voltage);
-% 
-%     % Display current transient
-%     setappdata(handles.generate_signal_button, 'signal_generated', 1);
-%     if size(transients,2) == 0
-%         set(handles.axes3, 'Visible', 'off');
-%     else
-%         display_transient(handles, int32(getappdata(handles.main, 'curr_transient')));
-%     end
+if size(getappdata(handles.main, 'dedispersed_series'), 2) ~= 0
+    display_dedispersed_series(handles, getappdata(handles.brute_force_dedisp_panel, 'curr_dm_index'));
 end
 
 statusbar;
@@ -177,6 +176,22 @@ statusbar;
 % --- Executes on button press in post_processing_button.
 function post_processing_button_Callback(hObject, eventdata, handles)
 
+statusbar(handles.main, 'Switching to "Post-Processing" tab');
+
+arrayfun(@cla,findall(0,'type','axes'))
+set(handles.axes2, 'Visible', 'off');
+set(handles.axes3, 'Visible', 'off');
+set(handles.generate_signal_panel, 'Visible', 'off');
+set(handles.dedispersion_panel, 'Visible', 'of');
+set(handles.channelisation_panel, 'Visible', 'off');
+set(handles.channelisation_panel, 'Visible', 'off');
+set(handles.post_processing_panel, 'Visible', 'on');
+
+% If signal has already been post_processed
+%if size(getappdata(handles.main, 'channelised_voltage'), 2) ~= 0
+%end
+
+statusbar;
 
 % ============================ TRANSIENT SECTION =========================
 
@@ -197,6 +212,7 @@ set(handles.apply_bandpass_button, 'Enable', 'off');
 set(handles.rfi_mitigation_button, 'Enable', 'off');
 set(handles.post_processing_button, 'Enable', 'off');
 set(handles.dedispersion_button, 'Enable', 'off');
+set(handles.post_processing_button, 'Enable', 'off');
 
 
 function display_transient(handles, num)
@@ -593,7 +609,7 @@ transients = getappdata(handles.main, 'transients');
 for i=1:size(transients, 2)
     
     % Generate chirp
-    chirp = generate_chirp(voltage, obs_params, transients(i).dm);
+    chirp = generate_chirp(obs_params, transients(i).dm, transients(i).snr);
     
     if transients(i).period ~= -1  % Periodic transient
         if transients(i).period < 0
@@ -610,13 +626,12 @@ for i=1:size(transients, 2)
         for j=1:num_periods
             start_pos = first_pos + period * (j-1);
             end_pos   = first_pos + period * (j-1) + size(chirp, 2) - 1;
-            voltage(start_pos:end_pos) = voltage(start_pos:end_pos) + ...
-                                         transients(i).snr * chirp;
+            voltage(start_pos:end_pos) = voltage(start_pos:end_pos) + chirp;
         end
     else     % Non-periodic transient
         if transients(i).timestamp ~= -1  % Timestamp set by user
             ts = transients(i).timestamp * 1e-3 * bandwidth + 1;
-        else                              % Timestamp
+        else                              % Random timestamp
             ts = int32(rand * (size(voltage,2) + size(chirp, 2)) - size(chirp, 2));
             transients(i).timestamp = ts / bandwidth * 1e3;
         end
@@ -675,9 +690,6 @@ close(h)
 
 % --- Executes on button press in change_signal_button.
 function change_signal_button_Callback(hObject, eventdata, handles)
-% hObject    handle to change_signal_button (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
 
 set(handles.add_transient_button, 'Enable', 'on');
 if size(getappdata(handles.main, 'transients')) ~= 0
@@ -757,12 +769,28 @@ if 0 > dm_index > num_dms
     return;
 end
 
+% Reset plots
+arrayfun(@cla,findall(0,'type','axes'))
+set(handles.axes2, 'Visible', 'off');
+set(handles.axes3, 'Visible', 'off');
+
+% If required, display dedispersed channelsif
+if get(handles.display_dedisp_channelised_checkbox, 'Value') == 1.0
+    % Calculate dedispersed channelised data
+    params       = getappdata(handles.main, 'observation_parameters');
+    power_series = abs(getappdata(handles.main, 'channelised_voltage').^2);
+    dedisped     = brute_force_dedisperser( power_series, params, double(start_dm + dm_index * dm_step));
+    
+    % Plot
+    set(handles.axes3, 'Visible', 'on');
+    axes(handles.axes3);
+    imagesc(dedisped);
+end
+
+% Plot dedispersed power series
 set(handles.axes2, 'Visible', 'on');
-set(handles.axes3, 'Visible', 'on');
-axes(handles.axes3);
-plot(reshape(sum(dedisped_data(dm_index,:,:), 2), 1, size(dedisped_data, 3)));
 axes(handles.axes2);
-imagesc(reshape(dedisped_data(dm_index,:,:), size(dedisped_data, 2), size(dedisped_data, 3) ));
+plot(dedisped_data(dm_index,:));
 
 % Update directional UI controls
 if dm_index == 1 || num_dms <= 1
@@ -788,7 +816,10 @@ set(handles.brute_curr_dm_text, 'String', text);
 % Update appdata
 setappdata(handles.brute_force_dedisp_panel, 'curr_dm_index', dm_index);
 
+% --- Executes on button press in display_dedisp_channelised_checkbox.
+function display_dedisp_channelised_checkbox_Callback(hObject, eventdata, handles)
 
+display_dedispersed_series(handles, getappdata(handles.brute_force_dedisp_panel, 'curr_dm_index'));
 
 % --- Executes on selection change in dedisp_technique_popup.
 function dedisp_technique_popup_Callback(hObject, eventdata, handles)
@@ -826,12 +857,19 @@ num_dms  = int32(str2double(get(handles.brute_num_dms_edit, 'String')));
 power_series = abs(getappdata(handles.main, 'channelised_voltage')).^2;
 params       = getappdata(handles.main, 'observation_parameters');
 
+% Calculate number of samples for largest DM value
+fch1 = (params.center_frequency + params.bandwidth / 2) * 1e-6;
+foff = params.bandwidth * 1e-6;
+delta_t = dispersion_delay( fch1 - foff, fch1, start_dm + dm_step * single(num_dms), params.sampling_time );
+arr_len = int32(size(power_series,2) - delta_t);
+
 % Perform brute-force dedispersion
 h = waitbar(0, 'Performing brute-force dedispersion');
-dedisped_data = zeros([num_dms size(power_series, 1) size(power_series, 2)]);
+dedisped_data = zeros(num_dms, arr_len);
 for i=1:num_dms
     waitbar(double(i)/double(num_dms), h,['Dedispersing ' num2str(i) ' of ' num2str(num_dms)]);
-    dedisped_data(i,:,:) = brute_force_dedisperser( power_series, params, double(start_dm + dm_step * (i-1)) );
+    dedisped = sum(brute_force_dedisperser( power_series, params, double(start_dm + dm_step * single(i-1.0)) ));
+    dedisped_data(i,:) = dedisped(1,1:arr_len);
 end
 close(h);
 
@@ -853,6 +891,10 @@ if num_dms < 1
     set(handles.brute_right_button, 'Enable', 'off');    
 end
 
+% Update Global UI
+set(handles.post_processing_button, 'Enable', 'on');
+
+
 % --- Executes on button press in brute_left_button.
 function brute_left_button_Callback(hObject, eventdata, handles)
 
@@ -865,3 +907,101 @@ function brute_right_button_Callback(hObject, eventdata, handles)
 
 display_dedispersed_series(handles, ...
     getappdata(handles.brute_force_dedisp_panel, 'curr_dm_index') + 1)
+
+
+% =========================== POST_PROCESSING =============================
+
+% --- Executes on selection change in post_technique_popup.
+function post_technique_popup_Callback(hObject, eventdata, handles)
+
+% Get selected option
+contents = cellstr(get(hObject, 'String'));
+option = contents{get(hObject, 'Value')};
+
+switch option;
+    case 'Threshold Detection'
+end
+
+% --- Executes on button press in median_filter_checkbox.
+function median_filter_checkbox_Callback(hObject, eventdata, handles)
+
+if get(handles.median_filter_checkbox, 'Value') == 1.0
+    set(handles.median_filter_nbins, 'Enable', 'on');
+else
+    set(handles.median_filter_nbins, 'Enable', 'off');
+end
+
+% --- Executes on button press in apply_threshold_button.
+function apply_threshold_button_Callback(hObject, eventdata, handles)
+
+statusbar(handles.main, 'Post-porcessing using detection threshold');
+
+% Get required data/parameters
+start_dm = str2double(get(handles.brute_start_dm_edit, 'String'));
+dm_step  = str2double(get(handles.brute_dm_step_edit, 'String'));
+num_dms  = int32(str2double(get(handles.brute_num_dms_edit, 'String')));
+params   = getappdata(handles.main, 'observation_parameters');
+
+% Make sure we have dedispersed data
+dedisped_data = getappdata(handles.main, 'dedispersed_series');
+thresh        = str2double(get(handles.detection_threshold, 'String'));
+
+% Apply median filter if required
+if get(handles.median_filter_checkbox, 'Value') == 1.0
+    bins = str2num(get(handles.median_filter_nbins, 'String'));
+    
+    % Apply median to each dedispersed time series
+    for i = 1 : size(dedisped_data, 1)
+        dedisped_data(i,:) = medfilt1(dedisped_data(i,:), bins);
+    end
+end
+
+% Calculate sum and stddev for all dedisperd power series
+mean   = mean2(dedisped_data);
+stddev = std2(dedisped_data);
+
+% Apply threshold
+[dm, time] = find(dedisped_data > mean + stddev * thresh);
+vals       = dedisped_data(dedisped_data > mean + stddev * thresh);
+vals       = (vals - mean) / stddev;
+dm         = start_dm + (dm - 1) .* dm_step;
+time       = time .* params.sampling_time;
+
+if get(handles.thresh_3d_checkbox, 'Value') == 1.0
+    % Display 3D scatter plot with results
+    statusbar(handles.main, 'Generating 3D plot');
+    arrayfun(@cla,findall(0,'type','axes'))
+    set(handles.axes3, 'Visible', 'off');
+    set(handles.axes2, 'Visible', 'on');
+    axes(handles.axes2);
+    grid on
+    scatter3(time, dm, vals, '+');
+    xlabel('Time (s)');
+    ylabel('DM');
+    zlabel('SNR')
+else
+    % Display Time vs DM plot
+    statusbar(handles.main, 'Generating 2D plots');
+    set(handles.axes2, 'Visible', 'on');
+    grid on
+    scatter(time, dm, exp(log10((vals - min(vals) * 1.00001))).^3);
+    title('Time vs DM plot');
+    xlabel('Time (s)');
+    ylabel('DM');
+    
+    % Display DM vs SNR plot
+    set(handles.axes3, 'Visible', 'on');
+    axes(handles.axes3);
+    grid on
+    scatter(dm, vals, '+');
+    title('SNR vs DM plot');
+    xlabel('DM');
+    ylabel('SNR')
+end
+
+statusbar(handles.main, '');
+
+% --- Executes on button press in thresh_3d_checkbox.
+function thresh_3d_checkbox_Callback(hObject, eventdata, handles)
+
+apply_threshold_button_Callback(hObject, eventdata, handles)

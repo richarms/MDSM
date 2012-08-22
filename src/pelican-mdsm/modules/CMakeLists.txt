@@ -4,7 +4,6 @@ set(mdsm_modules_SRC
     DedispersedDataWriter.cpp
     SigprocAdapter.cpp
     GuppiAdapter.cpp
-    MultiBeamTimeSeriesDataSet.cpp
     SpeadBeamChunker.cpp
     SpeadBeamAdapterTimeSeries.cpp
     SpeadBeamDataClient.cpp
